@@ -100,6 +100,57 @@ def curate_candidates(
     return selected
 
 
+def suggest_next_queries(
+    config: dict[str, Any],
+    pool_items: list[dict[str, Any]],
+    state: dict[str, Any],
+    limit: int,
+) -> tuple[list[str], int]:
+    """Deficit-driven curriculum: prefer categories underrepresented in the pool.
+
+    Counts current per-category representation, targets a uniform share
+    across query groups, and picks the queries from the most underrepresented
+    groups first. Ties fall back to the classic round-robin rotation so an
+    empty pool cycles queries deterministically. Returns (queries, new_offset).
+    """
+    groups: dict[str, list[str]] = config["query_groups"]
+    query_categories = {query: category for category, queries in groups.items() for query in queries}
+    all_queries = list(query_categories)
+    if not all_queries:
+        return [], 0
+    offset = int(state.get("query_offset", 0)) % len(all_queries)
+    rotated = [all_queries[(offset + index) % len(all_queries)] for index in range(len(all_queries))]
+    rotation_rank = {query: index for index, query in enumerate(rotated)}
+
+    counts = {name: 0 for name in groups}
+    for item in pool_items:
+        category = str(item.get("category") or "gaming")
+        if category in counts:
+            counts[category] += 1
+
+    picks = {name: 0 for name in groups}
+    selected: list[str] = []
+    limit = max(1, min(int(limit), len(all_queries)))
+    while len(selected) < limit:
+        target_share = (sum(counts.values()) + len(selected)) / len(groups)
+        best: str | None = None
+        best_key: tuple[float, int] | None = None
+        for query in rotated:
+            if query in selected:
+                continue
+            group = query_categories[query]
+            deficit = target_share - counts[group] - picks[group]
+            key = (deficit, -rotation_rank[query])
+            if best_key is None or key > best_key:
+                best_key = key
+                best = query
+        if best is None:
+            break
+        selected.append(best)
+        picks[query_categories[best]] += 1
+    return selected, (offset + len(selected)) % len(all_queries)
+
+
 def collect_candidate_pool(
     config_path: pathlib.Path = DEFAULT_CONFIG,
     candidates_path: pathlib.Path = DEFAULT_CANDIDATES,
@@ -119,29 +170,15 @@ def collect_candidate_pool(
         for category, queries in groups.items()
         for query in queries
     }
-    all_queries = list(query_categories)
     state_path = pathlib.Path(state_path)
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         state = {}
-    offset = int(state.get("query_offset", 0)) % len(all_queries)
     run_limit = max(1, query_limit or int(settings.get("searches_per_run", 2)))
-    selected_queries = [all_queries[(offset + index) % len(all_queries)] for index in range(min(run_limit, len(all_queries)))]
-    per_query = max(1, min(
-        50,
-        results_per_query or int(settings.get("max_videos_per_query", 50)),
-    ))
-    max_per_channel = max(1, int(settings.get("max_videos_per_channel", 10)))
-    target_size = max(1, int(target_size or settings.get("target_dataset_size", 500)))
 
-    discoveries = (agent or YouTubeResearchAgent(max_per_channel=max_per_channel)).discover(
-        results_per_query=per_query,
-        strategies=selected_queries,
-        license_filter=license_filter or str(settings.get("license", "creativeCommon")),
-        order=order or str(settings.get("order", "viewCount")),
-        lookback_days=max(1, int(settings.get("lookback_days", 90))),
-    )
+    # Load and prune the prior pool FIRST so the curriculum can see which
+    # categories are already represented.
     candidates_path = pathlib.Path(candidates_path)
     prior_pool = _read_pool(candidates_path)
     now = dt.datetime.now(dt.timezone.utc)
@@ -157,6 +194,22 @@ def collect_candidate_pool(
             discovered = discovered.replace(tzinfo=dt.timezone.utc)
         if discovered >= cutoff:
             prior_items.append(item)
+
+    selected_queries, next_offset = suggest_next_queries(config, prior_items, state, run_limit)
+    per_query = max(1, min(
+        50,
+        results_per_query or int(settings.get("max_videos_per_query", 50)),
+    ))
+    max_per_channel = max(1, int(settings.get("max_videos_per_channel", 10)))
+    target_size = max(1, int(target_size or settings.get("target_dataset_size", 500)))
+
+    discoveries = (agent or YouTubeResearchAgent(max_per_channel=max_per_channel)).discover(
+        results_per_query=per_query,
+        strategies=selected_queries,
+        license_filter=license_filter or str(settings.get("license", "creativeCommon")),
+        order=order or str(settings.get("order", "viewCount")),
+        lookback_days=max(1, int(settings.get("lookback_days", 90))),
+    )
     curated = curate_candidates(
         prior_items + discoveries,
         query_categories,
@@ -181,10 +234,14 @@ def collect_candidate_pool(
     candidates_path.write_text(json.dumps(pool, indent=2, ensure_ascii=True), encoding="utf-8")
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps({
-        "query_offset": (offset + len(selected_queries)) % len(all_queries),
+        "query_offset": next_offset,
         "last_queries": selected_queries,
         "updated_at": now_text,
         "candidate_count": len(curated),
+        "category_counts": {
+            category: sum(1 for item in curated if str(item.get("category")) == category)
+            for category in groups
+        },
     }, indent=2, ensure_ascii=True), encoding="utf-8")
     return pool
 

@@ -5,6 +5,7 @@ import pathlib
 import json
 import math
 import random
+import re
 import struct
 import wave
 from typing import Any
@@ -14,6 +15,36 @@ from app.utilities.ffmpeg_utils import get_duration
 
 DEFAULT_SFX_DIR = pathlib.Path(__file__).resolve().parents[2] / "assets" / "sfx"
 SAMPLE_RATE = 22050
+
+# Descriptive semantics for the locally generated starter assets. These
+# describe the SOUND itself (type, mood, envelope, tags) — never a mapping
+# from game events to specific effects.
+GENERATED_SEMANTICS: dict[str, dict[str, Any]] = {
+    "original_sweep.wav": {
+        "type": "sweep",
+        "mood": ["subtle", "airy", "forward"],
+        "intensity": 0.3,
+        "attack_seconds": 0.22,
+        "decay_seconds": 0.06,
+        "tags": ["transition", "reveal", "rise", "soft", "airy", "movement"],
+    },
+    "original_impact.wav": {
+        "type": "impact",
+        "mood": ["weighty", "dark", "punctual"],
+        "intensity": 0.75,
+        "attack_seconds": 0.005,
+        "decay_seconds": 0.3,
+        "tags": ["hit", "impact", "low", "thud", "emphasis", "punch"],
+    },
+    "original_glitch.wav": {
+        "type": "texture",
+        "mood": ["digital", "tense", "erratic"],
+        "intensity": 0.5,
+        "attack_seconds": 0.01,
+        "decay_seconds": 0.12,
+        "tags": ["glitch", "digital", "stutter", "pulse", "tech", "texture"],
+    },
+}
 
 
 class SfxLibrary:
@@ -35,15 +66,54 @@ class SfxLibrary:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 metadata = {}
+            semantic = metadata.get("semantic") or {}
             assets.append({
                 "filename": path.name,
                 "format": path.suffix.lower().lstrip("."),
                 "duration": duration,
                 "description": metadata.get("description", "User-provided sound effect"),
                 "origin": metadata.get("origin", "user-provided"),
+                "license": metadata.get("license"),
+                "type": semantic.get("type"),
+                "mood": semantic.get("mood") or [],
+                "intensity": semantic.get("intensity"),
+                "tags": semantic.get("tags") or [],
+                "semantic": semantic,
                 "path": str(path.resolve()),
             })
         return assets
+
+    def rank_candidates(
+        self,
+        description: str = "",
+        limit: int = 5,
+        intensity: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Semantic (lexical) ranking of assets against a free-text need.
+
+        Matches descriptive words/moods/tags/envelope only — it never maps
+        game events to sounds. An empty result is a valid outcome meaning
+        "nothing in the library fits"; callers may legitimately choose no SFX.
+        """
+        tokens = {token for token in re.findall(r"[a-z]+", (description or "").lower()) if len(token) > 2}
+        scored = []
+        for asset in self.list_assets():
+            haystack = " ".join([
+                str(asset.get("description") or ""),
+                str(asset.get("type") or ""),
+                " ".join(asset.get("mood") or []),
+                " ".join(asset.get("tags") or []),
+                asset["filename"].replace("_", " ").rsplit(".", 1)[0],
+            ]).lower()
+            hay_tokens = {token for token in re.findall(r"[a-z]+", haystack) if len(token) > 2}
+            overlap = len(tokens & hay_tokens)
+            score = overlap / len(tokens) if tokens else 0.0
+            if intensity is not None and asset.get("intensity") is not None:
+                score += max(0.0, 0.3 - abs(float(asset["intensity"]) - float(intensity)))
+            if score > 0:
+                scored.append({**asset, "match_score": round(score, 3)})
+        scored.sort(key=lambda item: (-item["match_score"], item["filename"]))
+        return scored[: max(1, int(limit))]
 
     def find(self, filename: str) -> pathlib.Path | None:
         for asset in self.list_assets():
@@ -60,13 +130,23 @@ class SfxLibrary:
         }
         for filename, (description, generator) in generators.items():
             audio_path = self.directory / filename
+            metadata_path = audio_path.with_suffix(".json")
             if not audio_path.is_file():
                 generator(audio_path)
-                audio_path.with_suffix(".json").write_text(json.dumps({
-                    "description": description,
-                    "origin": "generated locally by Gaming Video Agent",
-                    "license": "original synthesized audio",
-                }, indent=2), encoding="utf-8")
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                metadata = {}
+            generated_origin = metadata.get("origin") == "generated locally by Gaming Video Agent"
+            if not metadata_path.is_file() or (generated_origin and "semantic" not in metadata):
+                # (Re)write sidecars for generated assets only; user sidecars are never touched.
+                metadata = {
+                    "description": metadata.get("description", description),
+                    "origin": metadata.get("origin", "generated locally by Gaming Video Agent"),
+                    "license": metadata.get("license", "original synthesized audio"),
+                    "semantic": GENERATED_SEMANTICS.get(filename, {}),
+                }
+                metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
 
 def _write_mono_wave(path: pathlib.Path, samples: list[float]) -> None:

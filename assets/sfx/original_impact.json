@@ -1,5 +1,24 @@
 {
   "description": "A short low tonal impact with a quick decay.",
   "origin": "generated locally by Gaming Video Agent",
-  "license": "original synthesized audio"
+  "license": "original synthesized audio",
+  "semantic": {
+    "type": "impact",
+    "mood": [
+      "weighty",
+      "dark",
+      "punctual"
+    ],
+    "intensity": 0.75,
+    "attack_seconds": 0.005,
+    "decay_seconds": 0.3,
+    "tags": [
+      "hit",
+      "impact",
+      "low",
+      "thud",
+      "emphasis",
+      "punch"
+    ]
+  }
 }

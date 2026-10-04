@@ -10,7 +10,6 @@ import shutil
 import subprocess
 from typing import Any
 
-from app.analysis.media_context import _audio_mean_db
 from app.editing.style_learner import EditingStyleLearner, MIN_REFERENCE_EXAMPLES
 from app.training.dataset_quality import split_by_creator
 from app.utilities.ffmpeg_utils import get_audio_stream, get_ffmpeg_path, get_video_stream, probe
@@ -95,7 +94,8 @@ class ReferenceTrainingPipeline:
                 raise ValueError("Reference media has no valid duration.")
             audio = get_audio_stream(metadata)
             cuts = self._scene_cut_times(source)
-            audio_db = _audio_mean_db(source, duration) if audio else None
+            audio_levels = self._audio_levels(source) if audio else (None, None)
+            silence_ratio = self._silence_ratio(source, duration) if audio else None
             stored.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, stored)
         else:
@@ -106,7 +106,10 @@ class ReferenceTrainingPipeline:
                 raise ValueError("Reference media has no valid duration.")
             audio = get_audio_stream(metadata)
             cuts = self._scene_cut_times(stored)
-            audio_db = _audio_mean_db(stored, duration) if audio else None
+            audio_levels = self._audio_levels(stored) if audio else (None, None)
+            silence_ratio = self._silence_ratio(stored, duration) if audio else None
+        audio_db, audio_peak_db = audio_levels
+        shot_std, pacing_irregularity = _shot_pacing_statistics(cuts, duration)
         fps = _parse_rate(video.get("avg_frame_rate"))
         width, height = video.get("width"), video.get("height")
         video_format = None
@@ -124,7 +127,15 @@ class ReferenceTrainingPipeline:
             "scene_cut_count": len(cuts),
             "cut_density": round(len(cuts) / duration, 4) if duration > 0 else 0.0,
             "average_shot_duration": round(duration / (len(cuts) + 1), 3) if duration > 0 else None,
+            "shot_duration_std": shot_std,
+            "pacing_irregularity": pacing_irregularity,
+            "silence_ratio": silence_ratio,
             "audio_mean_db": audio_db,
+            "audio_peak_db": audio_peak_db,
+            "audio_dynamic_range_db": (
+                round(audio_peak_db - audio_db, 3)
+                if audio_db is not None and audio_peak_db is not None else None
+            ),
             "audio_intensity": round(max(0.0, min(1.0, (audio_db + 60) / 60)), 3) if audio_db is not None else None,
             "bgm_presence": None,
             "caption_density": None,
@@ -355,17 +366,59 @@ class ReferenceTrainingPipeline:
         )
         candidate["validation"]["active_model_mae"] = active_score
         self._write_json(candidate_path, candidate)
+        self._write_patterns(version, profiles)
         if promoted:
             self._write_json(active_path, candidate)
         return {
             "status": "promoted" if promoted else "rejected",
             "version": version,
+            "training_count": len(training),
+            "validation_count": len(validation),
+            "test_count": len(testing),
+            "example_count": len(unique),
+            "creator_count": creator_count,
             "validation_mae": score,
             "test_mae": test_score,
             "baseline_mae": baseline_score,
             "active_model_mae": active_score,
             "path": str(candidate_path),
         }
+
+    def _write_patterns(self, version: str, profiles: dict[str, dict[str, Any]]) -> pathlib.Path:
+        """Persist an inspectable JSONL digest of what the model version learned."""
+        path = self.patterns / f"{version}_patterns.jsonl"
+        records: list[dict[str, Any]] = []
+        for platform, profile in profiles.items():
+            if not isinstance(profile, dict):
+                continue
+            for relationship in profile.get("relationships", []) or []:
+                records.append({"type": "relationship", "platform": platform, "model_version": version, **relationship})
+            clusters = profile.get("style_clusters") or {}
+            for cluster in clusters.get("clusters", []) or []:
+                records.append({
+                    "type": "style_cluster",
+                    "platform": platform,
+                    "model_version": version,
+                    "cluster_id": cluster.get("cluster_id"),
+                    "label": cluster.get("label"),
+                    "size": cluster.get("size"),
+                    "dominant_tags": cluster.get("dominant_tags"),
+                    "distinctive_features": cluster.get("distinctive_features"),
+                })
+            for context, decisions in (profile.get("conditional_edit_probabilities") or {}).items():
+                for decision, stats in decisions.items():
+                    records.append({
+                        "type": "conditional_edit_probability",
+                        "platform": platform,
+                        "model_version": version,
+                        "context": context,
+                        "decision": decision,
+                        **stats,
+                    })
+        with path.open("w", encoding="utf-8") as stream:
+            for record in records:
+                stream.write(json.dumps(record, ensure_ascii=True) + "\n")
+        return path
 
     def _feedback_signals(self) -> dict[str, dict[str, int]]:
         path = self.root / "feedback" / "edits.jsonl"
@@ -385,6 +438,46 @@ class ReferenceTrainingPipeline:
                     bucket = counts.setdefault(str(tag), {"positive": 0, "negative": 0})
                     bucket["positive" if rating > 0 else "negative"] += 1
         return counts
+
+    @staticmethod
+    def _audio_levels(path: pathlib.Path) -> tuple[float | None, float | None]:
+        """Return (mean_volume_db, max_volume_db) via a single volumedetect pass."""
+        command = [
+            get_ffmpeg_path(), "-hide_banner", "-i", str(path),
+            "-map", "a:0", "-af", "volumedetect", "-f", "null", "-",
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        except (OSError, subprocess.TimeoutExpired):
+            return None, None
+        import re
+
+        def _db(pattern: str) -> float | None:
+            match = re.search(pattern + r":\s*(-?[0-9]+(?:\.[0-9]+)?)\s*dB", result.stderr)
+            return float(match.group(1)) if match else None
+
+        return _db(r"mean_volume"), _db(r"max_volume")
+
+    @staticmethod
+    def _silence_ratio(path: pathlib.Path, duration: float) -> float | None:
+        """Fraction of the timeline that is silent (-35 dB, >= 0.4 s windows)."""
+        if not duration or duration <= 0:
+            return None
+        command = [
+            get_ffmpeg_path(), "-hide_banner", "-i", str(path),
+            "-map", "a:0", "-af", "silencedetect=noise=-35dB:d=0.4", "-f", "null", "-",
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        import re
+
+        silent_seconds = sum(
+            float(value)
+            for value in re.findall(r"silence_duration:\s*([0-9]+(?:\.[0-9]+)?)", result.stderr)
+        )
+        return round(min(1.0, silent_seconds / duration), 4)
 
     @staticmethod
     def _scene_cut_times(path: pathlib.Path) -> list[float]:
@@ -473,6 +566,10 @@ class ReferenceTrainingPipeline:
                     if value is not None:
                         moment_features[field] = value
                         feature_values.setdefault(field, []).append(value)
+                speech = context.get("speech_present")
+                if isinstance(speech, bool):
+                    moment_features["speech_present"] = 1.0 if speech else 0.0
+                    feature_values.setdefault("speech_present", []).append(moment_features["speech_present"])
                 for field, value in observed_edit.items():
                     feature_values.setdefault(field, []).append(value)
                 if moment_features or observed_edit:
@@ -629,3 +726,22 @@ def _youtube_video_id(url: str | None) -> str | None:
     if parsed.hostname and parsed.hostname.endswith("youtube.com"):
         return parse_qs(parsed.query).get("v", [None])[0]
     return None
+
+def _shot_pacing_statistics(cuts: list[float], duration: float) -> tuple[float | None, float | None]:
+    """Return (shot_duration_std, pacing_irregularity) from scene-cut times.
+
+    pacing_irregularity is the coefficient of variation of shot durations —
+    low values indicate steady rhythm, high values indicate uneven pacing.
+    """
+    if not cuts or not duration or duration <= 0:
+        return None, None
+    import statistics as _statistics
+
+    boundaries = [0.0] + [float(cut) for cut in cuts if 0 < cut < duration] + [duration]
+    shots = [right - left for left, right in zip(boundaries, boundaries[1:]) if right > left]
+    if len(shots) < 2:
+        return None, None
+    std = _statistics.stdev(shots)
+    mean = _statistics.mean(shots)
+    irregularity = round(std / mean, 4) if mean > 0 else None
+    return round(std, 4), irregularity

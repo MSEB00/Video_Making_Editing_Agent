@@ -1,5 +1,24 @@
 {
   "description": "A brief gated digital texture with several small pulses.",
   "origin": "generated locally by Gaming Video Agent",
-  "license": "original synthesized audio"
+  "license": "original synthesized audio",
+  "semantic": {
+    "type": "texture",
+    "mood": [
+      "digital",
+      "tense",
+      "erratic"
+    ],
+    "intensity": 0.5,
+    "attack_seconds": 0.01,
+    "decay_seconds": 0.12,
+    "tags": [
+      "glitch",
+      "digital",
+      "stutter",
+      "pulse",
+      "tech",
+      "texture"
+    ]
+  }
 }
