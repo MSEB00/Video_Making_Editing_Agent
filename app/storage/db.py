@@ -27,10 +27,16 @@ def reset_engine() -> None:
     The module-level engine is created at import time; tests and long-lived
     processes that change DATABASE_URL afterwards must call this. SessionLocal
     is reconfigured in place, so every already-imported reference (e.g. inside
-    the orchestrator) transparently follows the new binding.
+    the orchestrator) transparently follows the new binding. The previous
+    engine is disposed so its pooled connections release their file handles —
+    on Windows an open SQLite handle blocks file deletion.
     """
     global DATABASE_URL, engine
     SessionLocal.remove()
+    try:
+        engine.dispose()
+    except Exception:
+        pass
     DATABASE_URL = _resolve_database_url()
     engine = create_engine(DATABASE_URL, echo=False, future=True)
     SessionLocal.configure(bind=engine)

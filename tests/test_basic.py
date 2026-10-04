@@ -39,11 +39,11 @@ def fresh_db():
     reset_engine()
     init_db()
     yield
-    # cleanup
-    reset_engine()
+    # cleanup: drop the env override FIRST, then reset (disposes the pooled
+    # connections holding the temp file open — required on Windows), then delete.
     os.environ.pop("DATABASE_URL", None)
-    if db_path.exists():
-        db_path.unlink()
+    reset_engine()
+    db_path.unlink(missing_ok=True)
 
 def test_orchestrate_job_creates_output(fresh_db):
     with tempfile.TemporaryDirectory() as tmpdir:
