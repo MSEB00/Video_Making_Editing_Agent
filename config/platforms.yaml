@@ -1,0 +1,43 @@
+﻿# config/platforms.yaml — Platform export specifications
+platforms:
+  youtube:
+    display_name: "YouTube (Long Form)"
+    width: 1920
+    height: 1080
+    fps: 60
+    aspect_ratio: "16:9"
+    max_duration: 43200       # 12 hours in seconds
+    max_file_size_mb: 256000
+    video_codec: "h264"
+    audio_codec: "aac"
+    audio_bitrate: "192k"
+    container: "mp4"
+    crf: 20
+
+  youtube_shorts:
+    display_name: "YouTube Shorts"
+    width: 1080
+    height: 1920
+    fps: 60
+    aspect_ratio: "9:16"
+    max_duration: 180
+    max_file_size_mb: 256000
+    video_codec: "h264"
+    audio_codec: "aac"
+    audio_bitrate: "192k"
+    container: "mp4"
+    crf: 20
+
+  instagram_reels:
+    display_name: "Instagram Reels"
+    width: 1080
+    height: 1920
+    fps: 30
+    aspect_ratio: "9:16"
+    max_duration: 90
+    max_file_size_mb: 1000
+    video_codec: "h264"
+    audio_codec: "aac"
+    audio_bitrate: "128k"
+    container: "mp4"
+    crf: 23

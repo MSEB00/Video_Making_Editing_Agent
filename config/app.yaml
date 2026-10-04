@@ -1,0 +1,24 @@
+﻿# config/app.yaml — Main application settings
+app:
+  name: "Gaming Video Agent"
+  version: "0.1.0"
+  mode: "development"          # development | production
+  auto_publish: false
+  dry_run: false
+  log_level: "INFO"
+
+directories:
+  input:  "input"
+  output: "output"
+  temp:   "temp"
+  logs:   "logs"
+  data:   "data"
+  assets: "assets"
+
+database:
+  url: "sqlite:///data/agent.db"
+
+api:
+  host: "127.0.0.1"
+  port: 5050
+  debug: false

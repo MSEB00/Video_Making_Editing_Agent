@@ -1,0 +1,76 @@
+{
+  "dataset_name": "short_form_gaming_cc",
+  "dataset_version": "v001",
+  "updated_at": "2026-09-30T21:30:15.414507+00:00",
+  "candidate_count": 2,
+  "queries_this_run": [
+    "VALORANT montage"
+  ],
+  "target_dataset_size": 5,
+  "items": [
+    {
+      "platform": "youtube",
+      "video_id": "YUoaSCvX9yU",
+      "url": "https://www.youtube.com/watch?v=YUoaSCvX9yU",
+      "title": "Best Jett Main You Can Find in Valorant.....!!",
+      "channel": "Megatron BRO",
+      "channel_id": "UCs5TfBBMYvO8MgdmEoEsL_A",
+      "description": "shorts #valorant #trending #ranked #valorantclips #valorant #shorts #valorantfunnymoments #valorantclips #valoranthighlights ...",
+      "published_at": "2026-08-17T18:28:17Z",
+      "duration_seconds": 13.0,
+      "category_id": "20",
+      "license": "creativeCommon",
+      "license_filter": "creativeCommon",
+      "view_count": 47902,
+      "like_count": 427,
+      "comment_count": 17,
+      "thumbnail_url": "https://i.ytimg.com/vi/YUoaSCvX9yU/hqdefault.jpg",
+      "discovery_queries": [
+        "VALORANT shorts"
+      ],
+      "discovery_mode": "trending",
+      "media_downloaded": false,
+      "category": "valorant",
+      "query": "VALORANT shorts",
+      "relevance_score": 1.0,
+      "view_signal": 0.8438,
+      "format_signal": 0.9458,
+      "curation_score": 0.945,
+      "license_url": null,
+      "attribution_required": true,
+      "media_acquired": false
+    },
+    {
+      "platform": "youtube",
+      "video_id": "NIwe8azzUDE",
+      "url": "https://www.youtube.com/watch?v=NIwe8azzUDE",
+      "title": "\u3010\ubc1c\ub85c\ub780\ud2b8\u3011\ub0e5\uc774 \ub18d\ub77d \ubaa8\uc74c \ud074\ub9bd \ud83d\ude3a #4",
+      "channel": "Nyangfps",
+      "channel_id": "UC5S7tg2vIPE-BNhR26xQZKg",
+      "description": "shorts #\ubc1c\ub85c\ub780\ud2b8 #valorant #valorantmoments #valorantclips #valorantfunny.",
+      "published_at": "2026-07-23T22:30:20Z",
+      "duration_seconds": 19.0,
+      "category_id": "20",
+      "license": "creativeCommon",
+      "license_filter": "creativeCommon",
+      "view_count": 30256,
+      "like_count": 71,
+      "comment_count": 6,
+      "thumbnail_url": "https://i.ytimg.com/vi/NIwe8azzUDE/hqdefault.jpg",
+      "discovery_queries": [
+        "VALORANT shorts"
+      ],
+      "discovery_mode": "trending",
+      "media_downloaded": false,
+      "category": "valorant",
+      "query": "VALORANT shorts",
+      "relevance_score": 1.0,
+      "view_signal": 0.8079,
+      "format_signal": 0.9208,
+      "curation_score": 0.9305,
+      "license_url": null,
+      "attribution_required": true,
+      "media_acquired": false
+    }
+  ]
+}

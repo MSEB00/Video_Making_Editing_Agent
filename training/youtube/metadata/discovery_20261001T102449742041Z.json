@@ -1,0 +1,59 @@
+{
+  "discovered_at": "2026-10-01T10:24:49.742041+00:00",
+  "expires_at": "2026-10-31T10:24:49.742041+00:00",
+  "published_after": "2026-07-03T10:24:48.844574+00:00",
+  "order": "viewCount",
+  "queries": [
+    "gaming Shorts"
+  ],
+  "results": [
+    {
+      "platform": "youtube",
+      "video_id": "-I_sA7EpaOU",
+      "url": "https://www.youtube.com/watch?v=-I_sA7EpaOU",
+      "title": "Funniest Moment in Meccha Chameleon #funnymoments #gaming #mecchachameleon #ranking #caseoh",
+      "channel": "S0ap",
+      "channel_id": "UCjUqdl3gKV1t4TJc53EGn4Q",
+      "description": "Credit: Mini Girl Caylus QualityCaseoh #funnymoments #gaming #shorts #ranking.",
+      "published_at": "2026-07-05T18:15:34Z",
+      "duration_seconds": 47.0,
+      "category_id": "20",
+      "license": "creativeCommon",
+      "license_filter": "creativeCommon",
+      "view_count": 29109617,
+      "like_count": 679080,
+      "comment_count": 969,
+      "thumbnail_url": "https://i.ytimg.com/vi/-I_sA7EpaOU/hqdefault.jpg",
+      "discovery_queries": [
+        "gaming Shorts"
+      ],
+      "discovery_mode": "trending",
+      "discovered_at": "2026-10-01T10:24:48.844591+00:00",
+      "media_downloaded": false
+    },
+    {
+      "platform": "youtube",
+      "video_id": "MXFlzR7UPYM",
+      "url": "https://www.youtube.com/watch?v=MXFlzR7UPYM",
+      "title": "I Was NOT Ready For This Pull",
+      "channel": "SpawnedIRL",
+      "channel_id": "UCr_O6iZm_2_i0AEPkLuSfLw",
+      "description": "Went in expecting nothing. Came out with this instead. Build A Soccer Squad pulls that make no sense \u26bd Legendary cards, ...",
+      "published_at": "2026-07-13T15:00:05Z",
+      "duration_seconds": 127.0,
+      "category_id": "20",
+      "license": "creativeCommon",
+      "license_filter": "creativeCommon",
+      "view_count": 19865876,
+      "like_count": 391781,
+      "comment_count": 4401,
+      "thumbnail_url": "https://i.ytimg.com/vi/MXFlzR7UPYM/hqdefault.jpg",
+      "discovery_queries": [
+        "gaming Shorts"
+      ],
+      "discovery_mode": "trending",
+      "discovered_at": "2026-10-01T10:24:48.844591+00:00",
+      "media_downloaded": false
+    }
+  ]
+}

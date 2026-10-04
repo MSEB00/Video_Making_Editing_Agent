@@ -1,0 +1,51 @@
+﻿# config/valorant.yaml — Valorant-specific analysis configuration
+game_id: "valorant"
+display_name: "VALORANT"
+
+hud:
+  # Approximate screen regions for 1920x1080 (normalised 0.0–1.0)
+  kill_feed:
+    x: 0.72
+    y: 0.02
+    width: 0.28
+    height: 0.25
+  score:
+    x: 0.40
+    y: 0.00
+    width: 0.20
+    height: 0.06
+  minimap:
+    x: 0.00
+    y: 0.00
+    width: 0.18
+    height: 0.22
+  health_bar:
+    x: 0.00
+    y: 0.88
+    width: 0.20
+    height: 0.12
+  ammo:
+    x: 0.80
+    y: 0.88
+    width: 0.20
+    height: 0.12
+
+# Audio fingerprinting patterns (describe what to listen for)
+audio_cues:
+  kill_confirm:
+    description: "Short high-pitch chime on kill"
+  headshot:
+    description: "Distinct crack/thud sound"
+  ability_ult:
+    description: "Loud ramp-up / voice line"
+  round_end:
+    description: "Trumpet fanfare / loss stinger"
+
+# OCR text patterns to detect in the kill feed and HUD
+ocr_patterns:
+  ace:       ["ACE", "ACE!"]
+  clutch:    ["1v2", "1v3", "1v4", "1v5", "CLUTCH"]
+  spike:     ["SPIKE PLANTED", "SPIKE DEFUSED"]
+  round_win: ["VICTORY", "WIN"]
+  round_loss: ["DEFEAT", "LOSS"]
+

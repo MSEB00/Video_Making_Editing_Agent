@@ -1,0 +1,17 @@
+{
+  "cached_at": 1790838997.5678017,
+  "data": {
+    "provider": "jamendo",
+    "track_id": "2060076",
+    "title": "Atlas (Original Mix)",
+    "artist": "Artyom Kitsenko",
+    "license_url": "http://creativecommons.org/licenses/by/3.0/",
+    "license_type": null,
+    "download_allowed": true,
+    "commercial_use": "verify_with_provider_for_intended_use",
+    "attribution_required": true,
+    "intended_use": "social_video",
+    "warning": "Jamendo API/download permission does not establish commercial or social-platform rights. Verify the track license or obtain a Jamendo Pro license before monetized use.",
+    "source_url": "https://www.jamendo.com/track/2060076"
+  }
+}

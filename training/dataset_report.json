@@ -1,0 +1,18 @@
+{
+  "dataset_name": "short_form_gaming_cc",
+  "dataset_version": "v001",
+  "total_videos": 0,
+  "videos_per_category": {},
+  "videos_per_creator": {},
+  "average_duration_seconds": null,
+  "average_width": null,
+  "average_height": null,
+  "format_distribution": {},
+  "average_view_count": null,
+  "license_distribution": {},
+  "duplicate_count": 0,
+  "corrupt_file_count": 0,
+  "missing_file_count": 0,
+  "missing_metadata_count": 0,
+  "category_imbalance": false
+}

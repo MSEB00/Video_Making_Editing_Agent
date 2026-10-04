@@ -1,0 +1,7 @@
+﻿# Testing
+pytest>=9.0.0
+pytest-cov>=5.0.0
+
+# Dev utilities
+black>=24.0.0
+ruff>=0.7.0

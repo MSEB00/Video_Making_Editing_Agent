@@ -1,0 +1,47 @@
+{
+  "cached_at": 1790837958.0907686,
+  "data": {
+    "id": "2060076",
+    "title": "Atlas (Original Mix)",
+    "artist": "Artyom Kitsenko",
+    "duration": 392.0,
+    "audio_url": "https://prod-1.storage.jamendo.com/?trackid=2060076&format=mp32&from=VPvrERyx6oh88dyRQNECTw%3D%3D%7COUKOBKre1%2FsmENs6IM2Q8w%3D%3D",
+    "download_url": "https://prod-1.storage.jamendo.com/download/track/2060076/mp32/",
+    "download_allowed": true,
+    "license_url": "http://creativecommons.org/licenses/by/3.0/",
+    "license_type": null,
+    "attribution_required": true,
+    "source_url": "https://www.jamendo.com/track/2060076",
+    "musicinfo": {
+      "vocalinstrumental": "instrumental",
+      "lang": "",
+      "gender": "",
+      "acousticelectric": "electric",
+      "speed": "high",
+      "tags": {
+        "genres": [
+          "trance",
+          "edm",
+          "electronic"
+        ],
+        "instruments": [
+          "synthesizer"
+        ],
+        "vartags": [
+          "happy"
+        ]
+      }
+    },
+    "stats": {
+      "rate_downloads_total": 510,
+      "rate_listened_total": 1091,
+      "playlisted": 4,
+      "favorited": 2,
+      "likes": 0,
+      "dislikes": 0,
+      "avgnote": 6,
+      "notes": 1
+    },
+    "audio_features": {}
+  }
+}

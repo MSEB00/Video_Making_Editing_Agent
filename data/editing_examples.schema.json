@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Generalized Short-Form Editing Timeline",
+  "type": "object",
+  "required": ["video", "platform", "duration", "segments"],
+  "properties": {
+    "video": {"type": "string"},
+    "platform": {"enum": ["youtube_shorts", "instagram_reels", "all"]},
+    "duration": {"type": "number", "exclusiveMinimum": 0},
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end"],
+        "properties": {
+          "start": {"type": "number", "minimum": 0},
+          "end": {"type": "number", "exclusiveMinimum": 0},
+          "type": {"type": "string"},
+          "cut_density": {"type": "number", "minimum": 0, "maximum": 1},
+          "caption_density": {"type": "number", "minimum": 0, "maximum": 1},
+          "visual_emphasis": {"type": "number", "minimum": 0, "maximum": 1},
+          "dead_space_tolerance": {"type": "number", "minimum": 0, "maximum": 1},
+          "early_payoff_seconds": {"type": "number", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

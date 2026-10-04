@@ -1,0 +1,59 @@
+dataset:
+  name: short_form_gaming_cc
+  version: v001
+  target_dataset_size: 500
+  max_videos_per_channel: 10
+  max_videos_per_query: 50
+  searches_per_run: 2
+  max_category_share: 0.35
+  license: creativeCommon
+  order: viewCount
+  lookback_days: 90
+
+query_groups:
+  valorant:
+    - "VALORANT shorts"
+    - "VALORANT montage"
+    - "VALORANT highlights"
+    - "VALORANT clutch"
+    - "VALORANT gaming edit"
+    - "VALORANT funny moments"
+    - "VALORANT gameplay shorts"
+  gaming:
+    - "gaming shorts"
+    - "gaming montage"
+    - "gaming highlights"
+    - "gaming edit"
+    - "gaming funny moments"
+    - "gaming reels"
+    - "gaming clips"
+  fps:
+    - "FPS shorts"
+    - "FPS montage"
+    - "FPS highlights"
+    - "FPS gaming edit"
+    - "FPS gaming Shorts"
+    - "competitive FPS Shorts"
+  competitive:
+    - "competitive gaming Shorts"
+    - "ranked gaming highlights"
+    - "esports competitive montage"
+  esports:
+    - "esports shorts"
+    - "esports montage"
+    - "esports highlights shorts"
+  cinematic:
+    - "cinematic gaming Shorts"
+    - "cinematic FPS montage"
+    - "gaming story edit"
+  reaction:
+    - "gaming reaction Shorts"
+    - "streamer reaction gaming clips"
+  funny:
+    - "funny gaming Shorts"
+    - "gaming meme shorts"
+  short_form_general:
+    - "story driven gaming Shorts"
+    - "gaming Shorts with captions"
+    - "TikTok gaming montage"
+    - "Instagram Reels gaming highlights"

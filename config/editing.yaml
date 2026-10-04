@@ -1,0 +1,30 @@
+# Bounds for the context-aware creative planner and renderer.
+creative_editing:
+  default_game: "valorant"
+  default_platform: "youtube_shorts"
+  supported_platforms:
+    - "youtube_shorts"
+    - "instagram_reels"
+  max_source_videos: 12
+  max_planned_shots: 24
+  max_short_duration_seconds: 60
+  jamendo_candidate_limit: 20
+  max_revision_passes: 1
+  review_render: true
+  learned_examples_path: "data/editing_examples.jsonl"
+  minimum_reference_examples: 5
+  reference_training_path: "training/youtube"
+  youtube_discovery_max_per_channel: 3
+
+youtube_research:
+  enabled: false
+  interval_seconds: 86400
+
+training_timeline:
+  allowed_aggregate_features:
+    - "cut_density"
+    - "caption_density"
+    - "visual_emphasis"
+    - "dead_space_tolerance"
+    - "early_payoff_seconds"
+  retain_creator_identity: false

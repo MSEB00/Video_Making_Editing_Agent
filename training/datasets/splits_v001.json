@@ -1,0 +1,23 @@
+{
+  "dataset_version": "v001",
+  "split_ratios": {
+    "train": 0.7,
+    "validation": 0.15,
+    "test": 0.15
+  },
+  "counts": {
+    "train": 0,
+    "validation": 0,
+    "test": 0
+  },
+  "creator_groups": {
+    "train": [],
+    "validation": [],
+    "test": []
+  },
+  "files": {
+    "train": "datasets/dataset_v001/train.jsonl",
+    "validation": "datasets/dataset_v001/validation.jsonl",
+    "test": "datasets/dataset_v001/test.jsonl"
+  }
+}

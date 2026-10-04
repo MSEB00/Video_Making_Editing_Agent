@@ -1,0 +1,38 @@
+{
+  "model_version": null,
+  "model_artifact": null,
+  "status": "insufficient_references",
+  "dataset_size": 0,
+  "minimum_references": 5,
+  "split_counts": {
+    "train": 0,
+    "validation": 0,
+    "test": 0
+  },
+  "training_loss": null,
+  "validation_metrics": null,
+  "training_configuration": {
+    "learner": "aggregate per-video editing-style profile",
+    "minimum_reference_examples": 5,
+    "split_ratios": {
+      "train": 0.7,
+      "validation": 0.15,
+      "test": 0.15
+    },
+    "split_strategy": "creator-separated holdout; not run because there are no reference examples",
+    "model_promotion": "not attempted; insufficient reference media"
+  },
+  "corpus": {
+    "rights_cleared_reference_videos": 0,
+    "local_gameplay_source_videos": 17,
+    "youtube_discovery_records_only": 2,
+    "youtube_media_downloaded": false,
+    "gameplay_analysis_artifact": "training/analysis/local_gameplay_v001.json"
+  },
+  "limitation": "No rights-cleared short-form reference videos are present. Raw gameplay captures are source footage, not style labels; YouTube discovery records contain metadata only.",
+  "training_result": {
+    "status": "insufficient_references",
+    "example_count": 0,
+    "minimum": 5
+  }
+}

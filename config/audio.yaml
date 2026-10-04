@@ -1,0 +1,21 @@
+﻿# config/audio.yaml — Audio processing settings
+game_audio:
+  volume: 1.0               # 1.0 = original level
+
+voice:
+  noise_reduction: true
+  normalize_target_lufs: -16.0
+  compressor_threshold_db: -18.0
+  compressor_ratio: 4.0
+
+bgm:
+  default_volume: 0.35      # ratio when no voice/events (0.0–1.0)
+  duck_volume: 0.12         # ratio when voice or kill event active
+  duck_attack_ms: 100
+  duck_release_ms: 500
+  fade_in_seconds: 1.0
+  fade_out_seconds: 2.0
+
+sfx:
+  max_concurrent: 3
+  asset_directory: "assets/sfx"

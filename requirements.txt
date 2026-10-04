@@ -1,0 +1,22 @@
+﻿# Core
+Flask==3.1.3
+Flask-SocketIO==5.6.1
+click==8.5.0
+python-dotenv==1.2.3
+PyYAML>=6.0.2
+SQLAlchemy>=2.0.36
+
+# AI / LLM
+openai>=1.50.0
+
+# Media Processing
+Pillow>=11.0.0
+
+# Google APIs
+google-auth>=2.35.0
+google-auth-oauthlib>=1.2.1
+google-api-python-client>=2.151.0
+
+# Utilities
+requests>=2.32.0
+colorama==0.4.6

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reference Research | Gaming Video Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #111411;
+      --surface: #1b201b;
+      --surface-raised: #252c25;
+      --border: #39423a;
+      --text: #f0f3ed;
+      --muted: #aab4a9;
+      --accent: #b6d96c;
+      --accent-ink: #17200e;
+      --warning: #e3b76c;
+      --danger: #dc8178;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--background); color: var(--text); font-family: Manrope, sans-serif; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    a { color: var(--accent); }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.5rem; border-bottom:1px solid var(--border); background:#171b17; }
+    .brand { display:flex; align-items:center; gap:.8rem; }
+    .brand-mark { display:grid; place-items:center; width:36px; aspect-ratio:1; background:var(--accent); color:var(--accent-ink); font-weight:800; }
+    h1 { margin:0; font-size:1rem; }
+    .subtitle { margin-top:.15rem; color:var(--muted); font-size:.78rem; }
+    .top-actions { display:flex; align-items:center; gap:.75rem; }
+    .top-actions a { color:var(--text); font-size:.85rem; text-decoration:none; }
+    main { display:grid; grid-template-columns:minmax(230px,300px) minmax(0,1fr); gap:1.25rem; max-width:1600px; margin:0 auto; padding:1.25rem; }
+    .library, .panel { border:1px solid var(--border); background:var(--surface); }
+    .library { min-height:calc(100vh - 110px); }
+    .panel-heading { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding:1rem; border-bottom:1px solid var(--border); }
+    h2 { margin:0; font-size:.95rem; }
+    .count, .mono, output { color:var(--muted); font: .75rem 'IBM Plex Mono', monospace; }
+    .search-form { display:grid; gap:.55rem; padding:1rem; border-bottom:1px solid var(--border); }
+    input, select, textarea { width:100%; min-width:0; border:1px solid var(--border); border-radius:3px; background:#121612; color:var(--text); padding:.55rem .65rem; }
+    textarea { min-height:82px; resize:vertical; }
+    label { display:grid; gap:.35rem; color:var(--muted); font-size:.76rem; }
+    .button { min-height:36px; border:1px solid var(--border); border-radius:3px; background:var(--surface-raised); color:var(--text); padding:.45rem .75rem; }
+    .button:hover:not(:disabled) { border-color:var(--accent); }
+    .button.primary { border-color:var(--accent); background:var(--accent); color:var(--accent-ink); font-weight:800; }
+    .button:disabled { cursor:not-allowed; opacity:.45; }
+    .video-list { display:grid; max-height:calc(100vh - 375px); overflow:auto; }
+    .video-item { display:grid; gap:.3rem; text-align:left; padding:.85rem 1rem; border:0; border-bottom:1px solid var(--border); background:transparent; color:var(--text); }
+    .video-item:hover, .video-item[aria-current="true"] { background:var(--surface-raised); }
+    .video-title { font-size:.82rem; font-weight:700; }
+    .video-meta { color:var(--muted); font-size:.7rem; }
+    .workspace { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(310px,.85fr); gap:1.25rem; align-items:start; }
+    .player-panel { min-width:0; }
+    .player-title { min-width:0; overflow-wrap:anywhere; }
+    .player-frame { position:relative; width:100%; aspect-ratio:16/9; background:#050605; }
+    #player { position:absolute; inset:0; width:100%; height:100%; }
+    .transport { display:grid; grid-template-columns:auto minmax(80px,1fr) auto auto; align-items:center; gap:.65rem; padding:.75rem 1rem; border-top:1px solid var(--border); }
+    input[type="range"] { padding:0; accent-color:var(--accent); }
+    .player-status { padding:0 1rem .8rem; color:var(--muted); font:.72rem 'IBM Plex Mono',monospace; }
+    .session-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.55rem; padding:0 1rem 1rem; }
+    .session-state { margin-right:auto; color:var(--muted); font-size:.75rem; }
+    .right-column { display:grid; gap:1.25rem; }
+    .observation-form { display:grid; gap:.8rem; padding:1rem; }
+    .time-row { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+    .time-control { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:.45rem; }
+    .time-row button { height:36px; }
+    .decision-grid { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
+    .small-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.6rem; }
+    .marker-list { display:grid; gap:.5rem; padding:1rem; max-height:240px; overflow:auto; }
+    .marker { display:grid; grid-template-columns:auto 1fr; align-items:start; gap:.65rem; padding:.6rem; background:#151a15; border-left:2px solid var(--accent); }
+    .marker button { border:0; background:none; color:var(--accent); font:.72rem 'IBM Plex Mono',monospace; }
+    .marker p { margin:.25rem 0 0; color:var(--muted); font-size:.75rem; white-space:pre-wrap; }
+    .notice { margin:1rem; padding:.75rem; border-left:2px solid var(--warning); background:#29251b; color:#e8d9b7; font-size:.74rem; line-height:1.5; }
+    .training-row { display:grid; gap:.7rem; padding:1rem; }
+    .training-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.4rem; }
+    .stat { padding:.6rem; background:#151a15; }
+    .stat strong { display:block; font:500 1rem 'IBM Plex Mono',monospace; }
+    .stat span { color:var(--muted); font-size:.68rem; }
+    #liveStatus { min-height:1.2rem; color:var(--muted); font-size:.75rem; }
+    #liveStatus.error { color:var(--danger); }
+    @media (max-width:1050px) { .workspace { grid-template-columns:1fr; } .right-column { grid-template-columns:1fr 1fr; } }
+    @media (max-width:720px) { main { grid-template-columns:1fr; padding:.7rem; } .library { min-height:0; } .video-list { max-height:210px; } .right-column { grid-template-columns:1fr; } .topbar { padding:.8rem; } .transport { grid-template-columns:auto minmax(40px,1fr) auto; } .transport .playback-state { display:none; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">G</div>
+      <div><h1>Reference Research</h1><div class="subtitle">YouTube playback and human-authored editing notes</div></div>
+    </div>
+    <div class="top-actions"><a href="/">Editing dashboard</a></div>
+  </header>
+  <main>
+    <aside class="library" aria-label="Reference videos">
+      <div class="panel-heading"><h2>Reference pool</h2><span class="count" id="videoCount">0</span></div>
+      <form class="search-form" id="searchForm">
+        <label for="topicInput">Topic or style</label>
+        <input id="topicInput" maxlength="120" value="gaming Shorts" placeholder="e.g. story-driven FPS Shorts">
+        <label for="resultLimit">Results per search</label>
+        <select id="resultLimit"><option>3</option><option selected>5</option><option>8</option><option>10</option></select>
+        <button class="button primary" type="submit" id="searchButton">Search YouTube</button>
+      </form>
+      <div class="video-list" id="videoList" role="list"></div>
+      <div class="notice">Search returns public metadata only. Select a result to watch it in YouTube's official embedded player.</div>
+    </aside>
+
+    <section class="workspace" aria-label="Observation workspace">
+      <div class="panel player-panel">
+        <div class="panel-heading"><h2 class="player-title" id="selectedTitle">Select a reference</h2><span class="count" id="selectedDuration">--:--</span></div>
+        <div class="player-frame"><div id="player"></div></div>
+        <div class="transport">
+          <button class="button" type="button" id="seekBack" title="Seek backward 5 seconds">−5s</button>
+          <input id="seekBar" type="range" min="0" max="100" value="0" aria-label="Seek within video">
+          <span class="mono" id="timeReadout">00:00 / 00:00</span>
+          <span class="mono playback-state" id="playbackState">Player idle</span>
+        </div>
+        <div class="player-status" id="playerStatus" aria-live="polite">Choose a reference to load the official player.</div>
+        <div class="session-bar">
+          <span class="session-state" id="sessionStatus">No active session</span>
+          <button class="button primary" id="startSession" type="button" disabled>Start observation</button>
+          <button class="button" id="finishSession" type="button" disabled>Finish session</button>
+        </div>
+      </div>
+
+      <div class="right-column">
+        <section class="panel">
+          <div class="panel-heading"><h2>Timeline observation</h2><span class="count">manual</span></div>
+          <form class="observation-form" id="observationForm">
+            <div class="time-row">
+              <div class="time-control"><label>Start (seconds)<input id="startTime" type="number" min="0" step="0.1" required></label><button class="button" id="markStart" type="button" title="Use current player time">In</button></div>
+              <div class="time-control"><label>End (seconds)<input id="endTime" type="number" min="0" step="0.1" required></label><button class="button" id="markEnd" type="button" title="Use current player time">Out</button></div>
+            </div>
+            <label>Structure or moment
+              <select id="structureLabel">
+                <option value="unclassified">Unclassified</option><option value="cold_open">Cold open</option><option value="hook">Hook</option><option value="context">Context</option><option value="buildup">Buildup</option><option value="escalation">Escalation</option><option value="peak">Peak</option><option value="payoff">Payoff</option><option value="reaction">Reaction</option><option value="silence">Intentional silence</option><option value="ending">Ending</option><option value="loop">Loop point</option><option value="other">Other</option>
+              </select>
+            </label>
+            <div class="decision-grid">
+              <label>Cut<select data-decision="cut"><option value="uncertain">Not judged</option><option value="observed">Observed</option><option value="not_observed">Not observed</option><option value="not_applicable">N/A</option></select></label>
+              <label>Zoom<select data-decision="zoom"><option value="uncertain">Not judged</option><option value="observed">Observed</option><option value="not_observed">Not observed</option><option value="not_applicable">N/A</option></select></label>
+              <label>Transition<select data-decision="transition"><option value="uncertain">Not judged</option><option value="observed">Observed</option><option value="not_observed">Not observed</option><option value="not_applicable">N/A</option></select></label>
+              <label>Caption<select data-decision="caption"><option value="uncertain">Not judged</option><option value="observed">Observed</option><option value="not_observed">Not observed</option><option value="not_applicable">N/A</option></select></label>
+              <label>SFX<select data-decision="sfx"><option value="uncertain">Not judged</option><option value="observed">Observed</option><option value="not_observed">Not observed</option><option value="not_applicable">N/A</option></select></label>
+              <label>BGM<select data-decision="bgm"><option value="uncertain">Not judged</option><option value="observed">Observed</option><option value="not_observed">Not observed</option><option value="not_applicable">N/A</option></select></label>
+            </div>
+            <div class="small-grid">
+              <label>Visual intensity (0–1)<input id="visualIntensity" type="number" min="0" max="1" step="0.1" placeholder="Not rated"></label>
+              <label>Audio intensity (0–1)<input id="audioIntensity" type="number" min="0" max="1" step="0.1" placeholder="Not rated"></label>
+              <label>Speech<select id="speechPresent"><option value="unknown">Unknown</option><option value="yes">Present</option><option value="no">Not present</option></select></label>
+              <label>Confidence (0–1)<input id="confidence" type="number" min="0" max="1" step="0.05" placeholder="Not rated"></label>
+            </div>
+            <label>Context<input id="gameplayContext" maxlength="120" placeholder="What is happening in the scene?"></label>
+            <label>Research note<textarea id="researchNote" maxlength="1000" placeholder="Describe the editing choice you observed. Do not transcribe or copy captions/audio."></textarea></label>
+            <label class="rights-check"><input id="rightsConfirmed" type="checkbox"> I verified the creator and audio rights for this reference and its intended analysis/training use.</label>
+            <button class="button primary" id="saveObservation" type="submit" disabled>Save observation</button>
+          </form>
+          <div class="notice" id="approvalNotice">Preview-only mode: persistent notes and session markers are disabled. YouTube's current API policies may restrict derived observations; enable annotation storage only after receiving the required written approval.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading"><h2>Session markers</h2><span class="count" id="markerCount">0</span></div>
+          <div class="marker-list" id="markerList"><span class="count">No observations yet</span></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading"><h2>Local learning data</h2><span class="count">rights-cleared files</span></div>
+          <div class="training-row">
+            <div class="training-stats">
+              <div class="stat"><strong id="localExamples">0</strong><span>local examples</span></div>
+              <div class="stat"><strong id="youtubeNotes">0</strong><span>YouTube notes</span></div>
+              <div class="stat"><strong id="eligibleObservations">0</strong><span>approved observations</span></div>
+              <div class="stat"><strong id="activeModel">No</strong><span>active model</span></div>
+            </div>
+            <button class="button" id="trainLocal" type="button">Train local reference model</button>
+            <div id="liveStatus" role="status" aria-live="polite"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <script>window.onYouTubeIframeAPIReady = () => window.dispatchEvent(new Event('youtube-api-ready'));</script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="{{ url_for('static', filename='research.js') }}" defer></script>
+</body>
+</html>
