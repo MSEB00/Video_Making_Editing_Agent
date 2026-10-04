@@ -10,6 +10,13 @@ creative_editing:
   max_short_duration_seconds: 60
   jamendo_candidate_limit: 20
   max_revision_passes: 1
+  # Align planned shots to detected gameplay events (e.g. VALORANT kills):
+  # buildup before, event as payoff near shot end, hold after, never cut mid-event.
+  align_to_gameplay_events: true
+  event_hold_seconds: 1.0
+  event_max_snap_shift_seconds: 6.0
+  event_detection_games:
+    - "valorant"
   review_render: true
   learned_examples_path: "data/editing_examples.jsonl"
   minimum_reference_examples: 5

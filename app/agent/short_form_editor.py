@@ -65,6 +65,7 @@ class ShortFormCreativeEditor:
             input_files,
             max_sources=max(1, int(self.settings.get("max_source_videos", 12))),
         )
+        events_by_source = self._detect_gameplay_events(input_files, media_context, options, notify)
         style_profile = self.style_learner.learn(platform)
         sfx_assets = self.sfx_library.list_assets()
         preferences = {
@@ -112,6 +113,7 @@ class ShortFormCreativeEditor:
         max_shots = max(1, int(self.settings.get("max_planned_shots", 24)))
         plan = EditPlan.from_dict(raw_plan, len(media_context["sources"]), max_shots)
         self._validate_source_ranges(plan, media_context["sources"], target_duration)
+        alignment = self._align_plan_to_events(plan, events_by_source, media_context["sources"])
         warnings: list[str] = []
         if hosted_error:
             warnings.append(
@@ -167,6 +169,7 @@ class ShortFormCreativeEditor:
                 )
                 revised = EditPlan.from_dict(revised_raw, len(media_context["sources"]), max_shots)
                 self._validate_source_ranges(revised, media_context["sources"], target_duration)
+                alignment = self._align_plan_to_events(revised, events_by_source, media_context["sources"]) or alignment
                 if revised.music_requirements != plan.music_requirements:
                     candidate_tracks = self._search_music(revised, warnings)
                     selected_track, license_record = self._select_music(
@@ -211,6 +214,11 @@ class ShortFormCreativeEditor:
         artifact["dataset_version"] = "rights_cleared_references_v001"
         artifact["music_license"] = license_record
         artifact["warnings"] = warnings
+        artifact["gameplay_events"] = {
+            str(source.get("source_index", index)): source.get("gameplay_events") or []
+            for index, source in enumerate(media_context.get("sources") or [])
+        }
+        artifact["event_alignment"] = {str(key): value for key, value in (alignment or {}).items()}
         width, height = (1080, 1920) if options.aspect_ratio == "9:16" else (1920, 1080)
         timeline = []
         cut_timestamps = []
@@ -237,6 +245,7 @@ class ShortFormCreativeEditor:
                 "source_audio_gain_db": self._source_audio_gain_db(
                     media_context["sources"][shot.source_index]
                 ),
+                "aligned_event": (alignment or {}).get(shot_index),
             })
             output_time += shot_duration
             previous_duration = shot_duration
@@ -497,6 +506,135 @@ class ShortFormCreativeEditor:
         if not valid_shots:
             raise ValueError("AI edit plan contains no usable footage ranges.")
         plan.shots = valid_shots
+
+    def _detect_gameplay_events(
+        self,
+        input_files: list[pathlib.Path],
+        media_context: dict[str, Any],
+        options: EditOptions,
+        notify: Callable[[str], None],
+    ) -> dict[int, list[dict[str, Any]]]:
+        """Detect timestamped gameplay events (e.g. kills) per analyzed source.
+
+        Events are attached to media_context sources so hosted planners can
+        reason about them, and returned per source_index for deterministic
+        shot alignment. Absence of events is a valid outcome — planning then
+        proceeds from measured motion/audio as before.
+        """
+        if not self.settings.get("align_to_gameplay_events", True):
+            return {}
+        allowed = {
+            str(game).strip().lower()
+            for game in (self.settings.get("event_detection_games") or ["valorant"])
+        }
+        game = str(options.game or self.settings.get("default_game", "")).strip().lower()
+        if game not in allowed:
+            return {}
+        from app.analysis.games import get_event_detector
+
+        detector = get_event_detector(game)
+        if detector is None:
+            return {}
+        sources = media_context.get("sources") or []
+        events_by_source: dict[int, list[dict[str, Any]]] = {}
+        notify(f"Scanning {len(sources)} source(s) for {game} gameplay events...")
+        for index, source in enumerate(sources):
+            if index >= len(input_files):
+                break
+            try:
+                events = detector.detect(input_files[index])
+            except Exception as exc:
+                log.warning("Event detection failed for %s: %s", input_files[index].name, exc)
+                events = []
+            source["gameplay_events"] = [
+                {
+                    "kind": event.get("kind"),
+                    "start": event.get("start"),
+                    "end": event.get("end", event.get("start")),
+                    "confidence": event.get("confidence"),
+                }
+                for event in events
+            ]
+            if events:
+                events_by_source[int(source.get("source_index", index))] = events
+        total = sum(len(value) for value in events_by_source.values())
+        notify(f"Detected {total} gameplay event(s) across {len(events_by_source)} source(s).")
+        log.info(
+            "Gameplay event detection complete",
+            extra={"game": game, "events": total, "sources_with_events": len(events_by_source)},
+        )
+        return events_by_source
+
+    def _align_plan_to_events(
+        self,
+        plan: EditPlan,
+        events_by_source: dict[int, list[dict[str, Any]]],
+        sources: list[dict[str, Any]],
+    ) -> dict[int, dict[str, Any]]:
+        """Deterministically snap shots so detected events become the payoff.
+
+        For each shot with events in its source: place the event end
+        ``event_hold_seconds`` before the shot end (the elimination is fully
+        visible plus a brief hold), extend the planned duration backwards as
+        buildup, and never cut inside the event. Planner intent is respected:
+        windows only move up to ``event_max_snap_shift_seconds``. This runs
+        for BOTH hosted and local plans, so alignment never depends on the
+        planner guessing timestamps.
+        """
+        if not events_by_source or not self.settings.get("align_to_gameplay_events", True):
+            return {}
+        hold = max(0.2, float(self.settings.get("event_hold_seconds", 1.0)))
+        max_shift = max(0.0, float(self.settings.get("event_max_snap_shift_seconds", 6.0)))
+        alignment: dict[int, dict[str, Any]] = {}
+        for shot_index, shot in enumerate(plan.shots):
+            events = events_by_source.get(shot.source_index)
+            if not events or shot.source_index >= len(sources):
+                continue
+            try:
+                source_duration = float(sources[shot.source_index].get("duration") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if source_duration <= 1.0:
+                continue
+            length = shot.end - shot.start
+            best: tuple[float, dict[str, Any], float, float] | None = None
+            for event in events:
+                event_start = float(event.get("start", 0.0))
+                event_end = float(event.get("end") or event_start)
+                new_end = min(source_duration - 0.05, event_end + hold)
+                new_start = max(0.0, new_end - length)
+                if event_start < new_start:
+                    # Never cut mid-event: pull the window back to include it.
+                    new_start = max(0.0, event_start - 0.3)
+                    new_end = min(source_duration - 0.05, max(new_end, new_start + min(length, 1.5)))
+                shift = max(abs(new_start - shot.start), abs(new_end - shot.end))
+                if shift > max_shift:
+                    continue
+                contained = event_start >= shot.start and event_end <= shot.end
+                cost = shift - (2.0 if contained else 0.0)
+                if best is None or cost < best[0]:
+                    best = (cost, event, new_start, new_end)
+            if best is None:
+                continue
+            _, event, new_start, new_end = best
+            if abs(new_start - shot.start) < 0.05 and abs(new_end - shot.end) < 0.05:
+                continue  # already aligned
+            shot.start = round(new_start, 3)
+            shot.end = round(new_end, 3)
+            alignment[shot_index] = {
+                "event_kind": event.get("kind"),
+                "event_start": event.get("start"),
+                "event_end": event.get("end", event.get("start")),
+                "event_confidence": event.get("confidence"),
+                "shot_start": shot.start,
+                "shot_end": shot.end,
+            }
+        if alignment:
+            log.info(
+                "Aligned %d shot(s) to detected gameplay events", len(alignment),
+                extra={"aligned_shots": len(alignment)},
+            )
+        return alignment
 
     @staticmethod
     def _public_track(track: dict[str, Any]) -> dict[str, Any]:

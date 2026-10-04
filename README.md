@@ -28,6 +28,13 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
   bounded-memory audio crossfade mixdown, color grading, title/caption
   overlays, SFX hits, BGM mixing with ducking, loudness normalization
   (creative mode), NVENC hardware encoding with automatic CPU fallback.
+- **Gameplay-event alignment** — a kill-feed detector (FFmpeg region
+  sampling + Pillow statistics, no extra dependencies) finds timestamped
+  eliminations in VALORANT footage; both the hosted AI planner (events are
+  part of its context) and a deterministic post-plan snap place each kill
+  as the shot's payoff: buildup before, ~1 s hold after, never cutting
+  mid-event. Tunable in `config/valorant.yaml`; disable via
+  `creative_editing.align_to_gameplay_events`.
 - **Aspect-ratio targeting** — 16:9 (YouTube) and 9:16 (Shorts/Reels/
   TikTok) with crop-first vertical reframing (no upscale-then-crop waste)
   and optional punch-zoom emphasis.
@@ -98,6 +105,10 @@ python main.py edit input\my_session --platform youtube_shorts --duration 30 --r
 
 # Discover reference metadata for a research topic (needs YOUTUBE_DATA_API_KEY)
 python main.py research --topic "valorant clutch shorts" --limit 5
+
+# Detect gameplay events (VALORANT kill feed) in a clip — use it to verify
+# alignment quality and tune config/valorant.yaml thresholds
+python main.py events "input\my_session\VALORANT clip.mp4" --game valorant
 
 # Inspect research dataset + candidate pool status (no API calls)
 python main.py research --inspect

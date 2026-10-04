@@ -49,3 +49,15 @@ ocr_patterns:
   round_win: ["VICTORY", "WIN"]
   round_loss: ["DEFEAT", "LOSS"]
 
+
+# ── Kill-feed event detection (app/analysis/games/valorant.py) ──────────────
+# Tune with: python main.py events <clip.mp4> --game valorant
+event_detection:
+  sample_fps: 4.0                 # kill-feed region samples per second
+  analysis_width: 224             # region downscaled width for analysis
+  min_structure_delta: 6.0        # min std-dev rise above baseline to count
+  mad_multiplier: 2.0             # robust threshold: p25 baseline + k*p25 deviation
+  min_consecutive_samples: 2      # sustained activity (filters flickers)
+  min_event_gap_seconds: 1.2      # bursts closer than this merge (multi-kills)
+  max_events_per_source: 24
+  analysis_timeout_seconds: 300

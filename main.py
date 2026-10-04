@@ -381,6 +381,35 @@ def train() -> None:
     }, indent=2))
 
 
+@cli.command(name="events")
+@click.argument('video_path', type=click.Path(exists=True, dir_okay=False), metavar='VIDEO')
+@click.option('--game', default='valorant', show_default=True, help='Game profile with an event detector.')
+def events(video_path: str, game: str) -> None:
+    """Detect gameplay events (e.g. VALORANT kills) in a video file.
+
+    Prints timestamped events with confidence scores. Use this to verify
+    detection against real kills and to tune config/<game>.yaml
+    event_detection thresholds for your recording/HUD setup.
+    """
+    from app.analysis.games import get_event_detector
+
+    detector = get_event_detector(game)
+    if detector is None:
+        raise click.UsageError(f"No event detector for game {game!r}. Supported: valorant.")
+    detected = detector.detect(pathlib.Path(video_path))
+    click.echo(json.dumps({
+        "video": video_path,
+        "game": game,
+        "event_count": len(detected),
+        "events": detected,
+        "hint": (
+            "Compare event times against real kills; if detection misses or "
+            "over-fires, tune event_detection thresholds in config/<game>.yaml."
+        ),
+    }, indent=2))
+    log.info("Event detection finished", extra={"game": game, "events": len(detected)})
+
+
 if __name__ == "__main__":
     # Load configuration early so that env overrides are applied
     _ = load_config()

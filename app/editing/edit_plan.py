@@ -32,6 +32,11 @@ class PlannedShot:
         if transition not in ALLOWED_TRANSITIONS:
             transition = "cut"
         caption = value.get("caption")
+        emphasis = value.get("visual_emphasis") or []
+        if isinstance(emphasis, str):
+            # Hosted models sometimes return "punch_zoom" instead of a list;
+            # iterating the raw string would split it into single characters.
+            emphasis = [emphasis]
         return cls(
             source_index=source_index,
             start=start,
@@ -39,7 +44,7 @@ class PlannedShot:
             role=str(value.get("role", "action"))[:80],
             transition=transition,
             caption=str(caption)[:100] if caption else None,
-            visual_emphasis=[str(item)[:40] for item in value.get("visual_emphasis", [])[:4]],
+            visual_emphasis=[str(item).strip()[:40] for item in emphasis[:4] if str(item).strip()],
         )
 
 
