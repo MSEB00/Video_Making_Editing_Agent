@@ -57,3 +57,16 @@ query_groups:
     - "gaming Shorts with captions"
     - "TikTok gaming montage"
     - "Instagram Reels gaming highlights"
+# Licensed stock-media reference collection (python main.py collect-references)
+# Provider: Pexels — license permits download and reuse. YouTube/Instagram
+# media is NEVER downloaded (no official access exists; ToS + policy forbid it).
+licensed_media:
+  default_queries:
+    - "esports gaming highlight"
+    - "sports highlights montage"
+    - "action montage fast cuts"
+    - "travel cinematic montage"
+    - "dance vertical montage"
+  max_per_uploader: 2
+  max_file_mb: 60
+  orientation: portrait

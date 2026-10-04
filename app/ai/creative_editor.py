@@ -83,6 +83,7 @@ class ShortFormEditingModel:
         user_request: str = "",
         user_preferences: Optional[dict[str, Any]] = None,
         available_sfx: Optional[list[dict[str, Any]]] = None,
+        metadata_priors: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         context = {
             "platform": platform,
@@ -93,6 +94,10 @@ class ShortFormEditingModel:
             "user_preferences": user_preferences or {},
             "available_sfx_assets": available_sfx or [],
         }
+        if metadata_priors:
+            # Metadata-only statistics from YouTube Data API research (duration
+            # distributions per category); no media was accessed to compute them.
+            context["youtube_metadata_priors"] = metadata_priors
         system = (
             "You are a context-aware short-form gaming editor. Create an original edit plan for this footage; "
             "do not imitate or identify any individual creator, and never reproduce a reference video's "
@@ -105,6 +110,9 @@ class ShortFormEditingModel:
             "end as the payoff with roughly a second of hold after it, and never cut in the middle "
             "of an event. Weigh event confidence and prefer multi-event sequences for the hook and "
             "climax. When a source has no events, fall back to motion and audio evidence. "
+            "The context may include youtube_metadata_priors: metadata-only duration distributions "
+            "from public short-form research (no media was accessed); use them as sanity checks for "
+            "platform-typical pacing and length. "
             "Treat relationships as statistical "
             "evidence, not rules, and account for sample counts and user feedback. If references are insufficient, "
             "do not claim a learned style. Do not use fixed event-to-effect "

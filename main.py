@@ -381,6 +381,49 @@ def train() -> None:
     }, indent=2))
 
 
+@cli.command(name="collect-references")
+@click.option('--limit', default=8, type=click.IntRange(1, 24), show_default=True,
+              help='How many licensed references to download and import.')
+@click.option('--query', 'queries', multiple=True,
+              help='Override default stock queries (repeatable).')
+@click.option('--orientation', default='portrait', show_default=True,
+              type=click.Choice(['portrait', 'landscape', 'square']))
+@click.option('--category', default='gaming', show_default=True,
+              type=click.Choice(sorted(['valorant', 'fps', 'gaming', 'esports', 'montage', 'highlights', 'funny'])))
+def collect_references(limit: int, queries: tuple[str, ...], orientation: str, category: str) -> None:
+    """AUTO training-data collection from legally downloadable licensed media.
+
+    Searches Pexels (license permits download and reuse; requires a free
+    PEXELS_API_KEY in .env), downloads short edited videos with per-uploader
+    diversity caps, persists license records, and imports them into the
+    training dataset with automatic feature analysis. No YouTube/Instagram
+    media is ever downloaded. Follow with: python main.py train
+    """
+    from app.research.licensed_media_provider import LicensedMediaError, PexelsVideoProvider
+
+    try:
+        provider = PexelsVideoProvider()
+    except LicensedMediaError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Collecting up to {limit} licensed reference(s) from Pexels...")
+    result = provider.collect(
+        limit=limit,
+        queries=list(queries) or None,
+        orientation=orientation,
+        category=category,
+    )
+    click.echo(json.dumps({
+        "status": "collected",
+        "downloaded_and_imported": len(result["imported"]),
+        "skipped": len(result["skipped"]),
+        "imported": result["imported"],
+        "skip_reasons": result["skipped"],
+        "license": "Pexels License (download+reuse permitted; records saved under training/licensed_licenses/)",
+        "youtube_or_instagram_media_downloaded": False,
+        "next_step": "python main.py train   (then: python main.py evaluate)",
+    }, indent=2))
+
+
 @cli.command(name="import-reference")
 @click.argument('video_path', type=click.Path(exists=True, dir_okay=False), metavar='VIDEO')
 @click.option('--rights-basis', required=True,

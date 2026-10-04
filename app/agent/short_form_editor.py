@@ -80,6 +80,11 @@ class ShortFormCreativeEditor:
         self._active_local_model = None
         hosted_error = None
         try:
+            from app.research.metadata_priors import youtube_duration_priors
+            metadata_priors = youtube_duration_priors()
+        except Exception:
+            metadata_priors = {}
+        try:
             if self.model is None:
                 raise self.model_configuration_error or CreativeAIConfigurationError(
                     "No creative model provider is configured."
@@ -92,6 +97,7 @@ class ShortFormCreativeEditor:
                 target_duration=target_duration,
                 user_request=options.creative_request,
                 user_preferences=preferences,
+                metadata_priors=metadata_priors,
                 available_sfx=[
                     {
                         key: item[key]
@@ -214,6 +220,8 @@ class ShortFormCreativeEditor:
         artifact["dataset_version"] = "rights_cleared_references_v001"
         artifact["music_license"] = license_record
         artifact["warnings"] = warnings
+        if metadata_priors:
+            artifact["youtube_metadata_priors"] = metadata_priors
         artifact["gameplay_events"] = {
             str(source.get("source_index", index)): source.get("gameplay_events") or []
             for index, source in enumerate(media_context.get("sources") or [])
