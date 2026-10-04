@@ -158,15 +158,14 @@ class ValorantEventDetector:
         # Merge runs separated by less than min_event_gap (multi-kill bursts).
         gap_samples = max(1, int(round(self.min_event_gap * self.sample_fps)))
         merged: list[list[int]] = []
-        for run in runs:
-            if merged and run[0] - merged[-1][1] <= gap_samples:
-                merged[-1][1] = run[1]
-                merged[-1].append(max(merged[-1][2], run[2]))  # keep peak index info
+        for start, end in runs:
+            if merged and start - merged[-1][1] <= gap_samples:
+                merged[-1][1] = end
             else:
-                merged.append(list(run))
+                merged.append([start, end])
 
         events = []
-        for start, end, _peak in merged:
+        for start, end in merged:
             length = end - start + 1
             if length < self.min_consecutive_samples:
                 continue  # transient flicker, not a feed entry
@@ -192,17 +191,17 @@ class ValorantEventDetector:
 
     @staticmethod
     def _active_runs(active: list[bool]) -> list[list[int]]:
-        """Return [start, end, peak_placeholder] runs of True values."""
+        """Return [start, end] index runs of True values."""
         runs: list[list[int]] = []
         start = None
         for index, flag in enumerate(active):
             if flag and start is None:
                 start = index
             elif not flag and start is not None:
-                runs.append([start, index - 1, start])
+                runs.append([start, index - 1])
                 start = None
         if start is not None:
-            runs.append([start, len(active) - 1, start])
+            runs.append([start, len(active) - 1])
         return runs
 
     @staticmethod

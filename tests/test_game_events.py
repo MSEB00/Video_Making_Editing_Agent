@@ -228,3 +228,26 @@ def test_relaxed_retry_finds_subtle_events(feed_video):
 def test_relaxed_retry_still_reports_nothing_when_truly_quiet(quiet_video):
     detector = ValorantEventDetector({"event_detection": {"min_structure_delta": 150.0}})
     assert detector.detect(quiet_video) == []
+
+
+def test_detector_merges_near_bursts_without_crash(tmp_path):
+    """Regression: multi-kill bursts 0.7s apart must merge into one event.
+
+    Production footage hit 'too many values to unpack' here because merged
+    runs grew beyond the unpacked tuple size.
+    """
+    path = tmp_path / "multikill.mp4"
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", "color=c=0x336633:s=640x360:r=25:d=12",
+        "-f", "lavfi", "-i", "color=c=white:s=120x40:r=25:d=12",
+        "-filter_complex",
+        "[0:v][1:v]overlay=x=470:y=12:enable='between(t,3,5)+between(t,5.7,7.7)'[out]",
+        "-map", "[out]",
+        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+        str(path),
+    ], check=True, capture_output=True)
+    events = ValorantEventDetector({}).detect(path)
+    assert len(events) == 1  # bursts 0.7s apart merge (< min_event_gap 1.2s)
+    assert events[0]["start"] <= 3.5
+    assert events[0]["end"] >= 7.5
