@@ -210,3 +210,21 @@ def test_create_edit_snaps_plan_and_records_events_in_artifact(tmp_path, monkeyp
     assert timeline_shot["aligned_event"]["event_start"] == 7.0
     assert artifact["gameplay_events"]["0"][0]["start"] == 7.0
     assert artifact["event_alignment"]["0"]["event_confidence"] == 0.9
+
+
+# ── Self-calibration (permissive retry pass) ─────────────────────────────────
+
+def test_relaxed_retry_finds_subtle_events(feed_video):
+    # Strict threshold deliberately above the burst magnitude: the configured
+    # pass finds nothing, the automatic permissive pass recovers the events.
+    detector = ValorantEventDetector({"event_detection": {"min_structure_delta": 150.0}})
+    events = detector.detect(feed_video)
+    assert len(events) == 2
+    assert all(event.get("relaxed_pass") is True for event in events)
+    assert all(event["confidence"] <= 0.76 for event in events)  # discounted (0.95 * 0.8)
+    assert 2.5 <= events[0]["start"] <= 3.5
+
+
+def test_relaxed_retry_still_reports_nothing_when_truly_quiet(quiet_video):
+    detector = ValorantEventDetector({"event_detection": {"min_structure_delta": 150.0}})
+    assert detector.detect(quiet_video) == []
