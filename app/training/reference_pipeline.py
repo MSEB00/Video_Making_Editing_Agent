@@ -189,7 +189,6 @@ class ReferenceTrainingPipeline:
             "size_bytes": file_size,
             "source_url": source_url,
             "license": license_name,
-            "rights_basis": rights_basis,
             "license_url": license_url,
             "attribution_required": attribution_required,
             "view_count": view_count,

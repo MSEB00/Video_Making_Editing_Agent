@@ -1,6 +1,5 @@
 """Tests for train-mode (self-training loop) and feedback (human validation) CLI."""
 import json
-import os
 import pathlib
 import tempfile
 
