@@ -33,11 +33,15 @@ def _create_color_video(path: pathlib.Path, color: str):
 @pytest.fixture(scope="function")
 def fresh_db():
     # Use a temporary SQLite DB file
+    from app.storage.db import reset_engine
     db_path = pathlib.Path(tempfile.mkdtemp()) / "test.db"
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+    reset_engine()
     init_db()
     yield
     # cleanup
+    reset_engine()
+    os.environ.pop("DATABASE_URL", None)
     if db_path.exists():
         db_path.unlink()
 
@@ -497,7 +501,8 @@ def test_reference_import_requires_rights_basis_and_records_derived_features(tmp
         ],
     })
     monkeypatch.setattr(ReferenceTrainingPipeline, "_scene_cut_times", staticmethod(lambda path: [2.0, 7.0, 12.0]))
-    monkeypatch.setattr("app.training.reference_pipeline._audio_mean_db", lambda path, duration: -18.0)
+    monkeypatch.setattr(ReferenceTrainingPipeline, "_audio_levels", staticmethod(lambda path: (-18.0, -6.0)))
+    monkeypatch.setattr(ReferenceTrainingPipeline, "_silence_ratio", staticmethod(lambda path, duration: 0.1))
 
     with pytest.raises(ValueError, match="rights_basis"):
         pipeline.import_local_video(source, rights_basis="youtube_discovery")
@@ -518,6 +523,12 @@ def test_reference_import_requires_rights_basis_and_records_derived_features(tmp
     assert example["features"]["audio_intensity"] == 0.7
     assert example["features"]["caption_density"] == 0.3
     assert example["features"]["fps"] == 30.0
+    # shots are [2, 5, 5, 8] seconds → std ≈ 2.449, CV ≈ 0.4899
+    assert example["features"]["shot_duration_std"] == pytest.approx(2.449, abs=0.01)
+    assert example["features"]["pacing_irregularity"] == pytest.approx(0.4899, abs=0.001)
+    assert example["features"]["silence_ratio"] == 0.1
+    assert example["features"]["audio_peak_db"] == -6.0
+    assert example["features"]["audio_dynamic_range_db"] == 12.0
     assert example["sha256"] == example["reference_id"]
     manifest = json.loads((pipeline.root / "dataset.json").read_text(encoding="utf-8"))
     assert manifest["total_items"] == 1

@@ -86,7 +86,7 @@ def process(input_path: str, style: str, platform: str, queue_only: bool) -> Non
     resolved edit options are persisted first, then the orchestrator renders
     the final video (unless --queue-only is given).
     """
-    cfg = load_config()
+    _ = load_config()
     from app.storage.db import SessionLocal
     from app.storage.models import Job
 
@@ -137,11 +137,38 @@ def process(input_path: str, style: str, platform: str, queue_only: bool) -> Non
 
 
 @cli.command()
-@click.option('--topic', required=True, help='Configurable short-form research topic or style.')
+@click.option('--topic', default=None, help='Configurable short-form research topic or style.')
 @click.option('--limit', default=5, type=click.IntRange(1, 10), show_default=True, help='Maximum search results for this explicit query.')
-def research(topic: str, limit: int) -> None:
+@click.option('--inspect', 'inspect_only', is_flag=True, help='Show research dataset status without calling any API.')
+def research(topic: str | None, limit: int, inspect_only: bool) -> None:
     """Discover public YouTube metadata for manual embedded-player research."""
     from app.research.video_observer import VideoObservationStore
+
+    if inspect_only:
+        store = VideoObservationStore()
+        pool_path = pathlib.Path(__file__).resolve().parent / "training" / "candidates.json"
+        try:
+            pool = json.loads(pool_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            pool = {}
+        categories: dict[str, int] = {}
+        for item in pool.get("items", []) if isinstance(pool, dict) else []:
+            key = str(item.get("category") or "gaming")
+            categories[key] = categories.get(key, 0) + 1
+        click.echo(json.dumps({
+            "research_dataset": store.stats(),
+            "candidate_pool": {
+                "candidate_count": pool.get("candidate_count", 0) if isinstance(pool, dict) else 0,
+                "updated_at": pool.get("updated_at") if isinstance(pool, dict) else None,
+                "target_dataset_size": pool.get("target_dataset_size") if isinstance(pool, dict) else None,
+                "category_counts": categories,
+            },
+        }, indent=2))
+        return
+
+    if not topic:
+        raise click.UsageError("--topic is required unless --inspect is given.")
+
     from app.research.youtube_research_agent import YouTubeResearchAgent
 
     candidates = YouTubeResearchAgent().discover(
@@ -158,6 +185,145 @@ def research(topic: str, limit: int) -> None:
         "registered": len(registered),
         "media_downloaded": False,
         "next_step": "Open /research to watch references and enter manual notes.",
+    }, indent=2))
+
+
+@cli.command()
+@click.argument('input_path', type=click.Path(exists=True, file_okay=False), metavar='CLIP_DIR')
+@click.option('--platform', default='youtube_shorts', show_default=True,
+              help='youtube_shorts | instagram_reels | youtube | tiktok')
+@click.option('--game', default='valorant', show_default=True, help='Game context hint for the planner.')
+@click.option('--request', default='', help='Free-text creative brief for the AI planner.')
+@click.option('--duration', 'target_duration', default=45, type=click.IntRange(5, 180), show_default=True,
+              help='Target duration in seconds.')
+@click.option('--bgm', default=None, help='Music hint (Jamendo search phrase or local asset); "none" disables BGM.')
+def edit(input_path: str, platform: str, game: str, request: str, target_duration: int, bgm: str | None) -> None:
+    """Run the full CREATIVE pipeline: AI plan → render → review → revise.
+
+    Uses the hosted creative model when configured (GEMINI_API_KEY /
+    OPENAI_API_KEY) and falls back to the measured local feature planner
+    otherwise. Produces output/job_N_final.mp4 plus an .edit-plan.json
+    artifact with full decision provenance.
+    """
+    from app.storage.db import SessionLocal
+    from app.storage.models import Job
+    from app.orchestrator.orchestrator import orchestrate_job
+    from app.editing.editor import EditOptions
+
+    _ = load_config()
+    platform_norm = platform.strip().lower()
+    aspect_ratio = "9:16" if platform_norm in VERTICAL_PLATFORMS else "16:9"
+    metadata = {
+        "style": "CREATIVE_AI",
+        "creative_mode": True,
+        "creative_request": request,
+        "game": game,
+        "platform": platform_norm,
+        "target_duration": target_duration,
+        "aspect_ratio": aspect_ratio,
+        "bgm_track": bgm,
+    }
+    db = SessionLocal()
+    try:
+        job = Job(status="queued", input_path=input_path, extra_metadata=json.dumps(metadata))
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+    click.echo(f"Creative job {job_id} queued.")
+    log.info("Creative job queued", extra={"job_id": job_id, "platform": platform_norm})
+
+    options = EditOptions(
+        creative_mode=True,
+        creative_request=request,
+        game=game,
+        platform=platform_norm,
+        target_duration=target_duration,
+        aspect_ratio=aspect_ratio,
+        bgm_track=bgm,
+        variation_seed=job_id,
+    )
+
+    def _progress(icon: str, msg: str) -> None:
+        click.echo(f"{icon}  {msg}")
+
+    try:
+        output_path = orchestrate_job(job_id, options=options, progress_callback=_progress)
+    except Exception as exc:
+        log.exception("Creative job failed", extra={"job_id": job_id})
+        click.echo(f"Job {job_id} FAILED: {exc}", err=True)
+        sys.exit(1)
+    plan_path = pathlib.Path(str(output_path)).with_suffix(".edit-plan.json")
+    click.echo(f"Job {job_id} completed -> {output_path}")
+    if plan_path.is_file():
+        click.echo(f"Edit plan artifact -> {plan_path}")
+    log.info("Creative job completed", extra={"job_id": job_id, "output": str(output_path)})
+
+
+@cli.command()
+def evaluate() -> None:
+    """Report dataset and active-model statistics without retraining."""
+    from app.training.reference_pipeline import ReferenceTrainingPipeline
+
+    pipeline = ReferenceTrainingPipeline()
+    examples = pipeline._read_examples()
+    unique = {str(item.get("reference_id")): item for item in examples if item.get("reference_id")}
+    creators = len({item.get("creator_group") or item.get("reference_id") for item in unique.values()})
+    youtube_examples = sum(
+        1 for item in unique.values()
+        if (item.get("provenance") or {}).get("platform") == "youtube"
+    )
+    feature_names = sorted({
+        name
+        for item in unique.values()
+        for name, value in (item.get("features") or {}).items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    })
+    active_path = pipeline.patterns / "active.json"
+    active = None
+    if active_path.is_file():
+        try:
+            active = json.loads(active_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            active = None
+    model_report: dict = {
+        "status": "no_active_model",
+        "hint": "Import rights-cleared references, then run: python main.py train",
+    }
+    if active:
+        model_report = {
+            "status": "active",
+            "version": active.get("version"),
+            "created_at": active.get("created_at"),
+            "validation": active.get("validation"),
+            "path": str(active_path),
+            "platforms": {
+                platform: {
+                    "training_status": profile.get("training_status"),
+                    "example_count": profile.get("example_count"),
+                    "cluster_count": len((profile.get("style_clusters") or {}).get("clusters", [])),
+                    "cluster_labels": [
+                        cluster.get("label")
+                        for cluster in (profile.get("style_clusters") or {}).get("clusters", [])
+                    ],
+                    "relationship_count": len(profile.get("relationships", [])),
+                    "conditional_contexts": len(profile.get("conditional_edit_probabilities", {})),
+                }
+                for platform, profile in (active.get("profiles") or {}).items()
+                if isinstance(profile, dict)
+            },
+        }
+    click.echo(json.dumps({
+        "dataset": {
+            "reference_count": len(unique),
+            "creator_count": creators,
+            "local_rights_cleared_examples": len(unique) - youtube_examples,
+            "youtube_derived_examples": youtube_examples,
+            "feature_count": len(feature_names),
+            "features": feature_names,
+        },
+        "model": model_report,
     }, indent=2))
 
 
