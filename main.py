@@ -1,4 +1,4 @@
-﻿"""
+"""
 main.py
 --------
 CLI entry point for the Gaming Video Agent.
@@ -381,6 +381,59 @@ def train() -> None:
     }, indent=2))
 
 
+@cli.command(name="import-reference")
+@click.argument('video_path', type=click.Path(exists=True, dir_okay=False), metavar='VIDEO')
+@click.option('--rights-basis', required=True,
+              type=click.Choice(['user_owned', 'licensed', 'public_domain', 'explicitly_permitted']),
+              help='Your rights basis for using this video as a training reference.')
+@click.option('--platform', default='youtube_shorts', show_default=True,
+              type=click.Choice(['youtube_shorts', 'instagram_reels', 'gaming_shorts', 'all']))
+@click.option('--style-tags', default='', help='Comma-separated style tags, e.g. "montage,aggressive".')
+@click.option('--creator-group', default=None, help='Anonymous creator/channel grouping (for leak-free splits).')
+@click.option('--category', default='gaming', show_default=True,
+              type=click.Choice(sorted(['valorant', 'fps', 'gaming', 'esports', 'montage', 'highlights', 'funny'])))
+def import_reference(video_path: str, rights_basis: str, platform: str, style_tags: str,
+                     creator_group: str | None, category: str) -> None:
+    """Import a RIGHTS-CLEARED video as a local training reference.
+
+    Analyzes the video offline (scene cuts, pacing, loudness, silence) and
+    adds it to the training dataset. Use your own edits or properly licensed
+    material only — never feed it copyrighted videos you don't have rights
+    to. Training (python main.py train) consumes these references.
+    """
+    from app.training.reference_pipeline import ReferenceTrainingPipeline
+
+    tags = [tag.strip() for tag in style_tags.split(",") if tag.strip()] or None
+    pipeline = ReferenceTrainingPipeline()
+    try:
+        example = pipeline.import_local_video(
+            pathlib.Path(video_path),
+            rights_basis=rights_basis,
+            platform=platform,
+            style_tags=tags,
+            creator_group=creator_group,
+            category=category,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    features = example.get("features", {})
+    click.echo(json.dumps({
+        "status": "imported",
+        "reference_id": example.get("reference_id", "")[:16] + "...",
+        "rights_basis": rights_basis,
+        "platform": platform,
+        "category": category,
+        "style_tags": example.get("style_tags"),
+        "key_features": {
+            key: features.get(key)
+            for key in ("duration", "cut_density", "average_shot_duration",
+                        "shot_duration_std", "pacing_irregularity",
+                        "silence_ratio", "audio_mean_db")
+        },
+        "next_step": "Add more references (>=5 distinct, >=3 creator groups), then: python main.py train",
+    }, indent=2))
+
+
 @cli.command(name="events")
 @click.argument('video_path', type=click.Path(exists=True, dir_okay=False), metavar='VIDEO')
 @click.option('--game', default='valorant', show_default=True, help='Game profile with an event detector.')
@@ -407,7 +460,6 @@ def events(video_path: str, game: str) -> None:
             "over-fires, tune event_detection thresholds in config/<game>.yaml."
         ),
     }, indent=2))
-    log.info("Event detection finished", extra={"game": game, "events": len(detected)})
 
 
 if __name__ == "__main__":

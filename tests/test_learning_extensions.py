@@ -397,3 +397,41 @@ def test_cli_edit_runs_creative_pipeline(tmp_path, monkeypatch, fresh_db):
     db.close()
     assert metadata["creative_mode"] is True
     assert metadata["style"] == "CREATIVE_AI"
+
+
+def test_cli_import_reference_analyzes_and_registers(tmp_path):
+    import subprocess
+    import main as main_module
+
+    clip = tmp_path / "my_edit.mp4"
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", "color=c=red:s=320x240:r=25:d=3",
+        "-f", "lavfi", "-i", "color=c=blue:s=320x240:r=25:d=3",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=6",
+        "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+        "-map", "[v]", "-map", "2:a",
+        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", str(clip),
+    ], check=True, capture_output=True)
+
+    result = CliRunner().invoke(main_module.cli, [
+        "import-reference", str(clip),
+        "--rights-basis", "user_owned",
+        "--platform", "youtube_shorts",
+        "--style-tags", "montage,aggressive",
+        "--creator-group", "me",
+        "--category", "valorant",
+    ])
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.output)
+    assert report["status"] == "imported"
+    assert report["key_features"]["duration"] == 6.0
+    assert report["key_features"]["cut_density"] > 0  # one real scene cut detected
+    assert report["rights_basis"] == "user_owned"
+
+    bad = CliRunner().invoke(main_module.cli, [
+        "import-reference", str(clip), "--rights-basis", "user_owned",
+        "--category", "not_a_category",
+    ])
+    assert bad.exit_code != 0  # choice validation rejects unknown categories
