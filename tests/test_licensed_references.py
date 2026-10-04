@@ -250,3 +250,96 @@ def test_hosted_planner_receives_metadata_priors(tmp_path, monkeypatch):
     assert "metadata_priors" in captured
     assert isinstance(captured["metadata_priors"], dict)
     assert artifact["planning_mode"] == "hosted_creative_model"
+
+
+# ── Internet Archive provider + license/duration gates ───────────────────────
+
+from app.research.licensed_media_provider import (  # noqa: E402
+    InternetArchiveProvider,
+    _rights_from_license_url,
+)
+
+
+class ArchiveFakeSession:
+    """advancedsearch → 3 docs (CC-BY ok, no-license rejected by search filter
+    anyway, CC0 ok); metadata → one short mp4 + one oversized VOD + one long."""
+
+    def __init__(self, file_bytes):
+        self.file_bytes = file_bytes
+        self.urls = []
+
+    def get(self, url, params=None, headers=None, stream=False, timeout=None):
+        self.urls.append(url)
+        if "advancedsearch" in url:
+            return FakeResponse(payload={"response": {"docs": [
+                {"identifier": "good-item", "title": "CC montage",
+                 "creator": "alice", "licenseurl": "http://creativecommons.org/licenses/by/4.0/"},
+                {"identifier": "long-item", "title": "CC long",
+                 "creator": "bob", "licenseurl": "http://creativecommons.org/licenses/by-sa/4.0/"},
+            ]}})
+        if "metadata/good-item" in url:
+            return FakeResponse(payload={"files": [
+                {"name": "thumb.jpg", "format": "JPEG Thumb", "size": "5000"},
+                {"name": "good.mp4", "format": "h.264", "size": "1000000", "length": "45.2"},
+            ]})
+        if "metadata/long-item" in url:
+            return FakeResponse(payload={"files": [
+                {"name": "vod.mp4", "format": "h.264", "size": "1000000", "length": "3600"},
+                {"name": "huge.mp4", "format": "h.264", "size": str(200 * 1024 * 1024), "length": "60"},
+            ]})
+        return FakeResponse(chunks=[self.file_bytes], headers={"content-length": str(len(self.file_bytes))})
+
+
+def test_rights_classification():
+    assert _rights_from_license_url("http://creativecommons.org/licenses/by/4.0/") == ("licensed", "Creative Commons (see license_url)")
+    assert _rights_from_license_url("http://creativecommons.org/publicdomain/zero/1.0/")[0] == "public_domain"
+    assert _rights_from_license_url("https://example.com/custom-license") is None
+    assert _rights_from_license_url(None) is None
+
+
+def test_archive_provider_imports_only_short_cc_items(tmp_path, mp4_bytes_by_id, monkeypatch):
+    session = ArchiveFakeSession(mp4_bytes_by_id["1"])
+    pipeline = ReferenceTrainingPipeline(tmp_path / "training")
+    provider = InternetArchiveProvider(
+        inbox=tmp_path / "inbox", license_dir=tmp_path / "licenses",
+        session=session, config_path=tmp_path / "absent.yaml",
+    )
+    result = provider.collect(limit=4, queries=["valorant gameplay"], pipeline=pipeline)
+
+    assert len(result["imported"]) == 1
+    assert result["imported"][0]["uploader"] == "alice"
+    # long-item has no qualifying file (3600s length + 200MB size) → skipped
+    assert any(item["reason"] == "no_download_url" or item["reason"] == "download_failed_or_too_large"
+               for item in result["skipped"]) or len(result["skipped"]) == 0
+    examples = pipeline._read_examples()
+    assert len(examples) == 1
+    assert examples[0]["rights_basis"] == "licensed"
+    assert examples[0]["attribution_required"] is True
+    assert examples[0]["creator_group"].startswith("internet_archive_")
+    assert examples[0]["license_url"].startswith("http://creativecommons.org/")
+
+
+def test_archive_provider_requires_no_api_key(monkeypatch):
+    monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+    provider = InternetArchiveProvider(config_path=None)
+    assert provider.api_key == ""
+
+
+def test_pexels_duration_gate_skips_long_videos(tmp_path, mp4_bytes_by_id, monkeypatch):
+    monkeypatch.setenv("PEXELS_API_KEY", "k")
+    payload = _search_payload()
+    payload["videos"][0]["duration"] = 600  # 10-minute video → not short-form
+
+    class DurationSession(FakeSession):
+        def get(self, url, params=None, headers=None, stream=False, timeout=None):
+            if "videos/search" in url:
+                return FakeResponse(payload=payload)
+            return super().get(url, params=params, headers=headers, stream=stream, timeout=timeout)
+
+    provider = PexelsVideoProvider(
+        inbox=tmp_path / "inbox", license_dir=tmp_path / "licenses",
+        session=DurationSession(mp4_bytes_by_id), config_path=tmp_path / "absent.yaml",
+    )
+    result = provider.collect(limit=4, queries=["q"], pipeline=ReferenceTrainingPipeline(tmp_path / "training"))
+    reasons = {item["reason"] for item in result["skipped"]}
+    assert "duration_not_short_form" in reasons

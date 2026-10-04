@@ -62,11 +62,19 @@ query_groups:
 # media is NEVER downloaded (no official access exists; ToS + policy forbid it).
 licensed_media:
   default_queries:
-    - "esports gaming highlight"
     - "sports highlights montage"
     - "action montage fast cuts"
-    - "travel cinematic montage"
-    - "dance vertical montage"
+    - "skateboard montage edit"
+    - "dance vertical edit"
+    - "car drift montage"
+    - "travel cinematic transitions"
   max_per_uploader: 2
   max_file_mb: 60
   orientation: portrait
+  # Internet Archive provider queries (CC/PD-licensed items only, no key needed)
+  archive_queries:
+    - "valorant gameplay"
+    - "esports montage"
+    - "gaming montage"
+    - "counter strike highlights"
+    - "overwatch play montage"

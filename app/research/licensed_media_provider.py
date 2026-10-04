@@ -17,6 +17,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import re
 from typing import Any, Optional
 
 import requests
@@ -34,12 +35,17 @@ PEXELS_LICENSE_NAME = "Pexels License"
 PEXELS_LICENSE_URL = "https://www.pexels.com/license/"
 
 DEFAULT_QUERIES = (
-    "esports gaming highlight",
     "sports highlights montage",
     "action montage fast cuts",
-    "travel cinematic montage",
-    "dance vertical montage",
+    "skateboard montage edit",
+    "dance vertical edit",
+    "car drift montage",
+    "travel cinematic transitions",
 )
+
+# Only true short-form references teach short-form grammar; long VODs would
+# pollute the dataset with cut_density ~= 0 "style".
+SHORT_FORM_MAX_SECONDS = 180.0
 
 
 class LicensedMediaError(RuntimeError):
@@ -129,6 +135,8 @@ class PexelsVideoProvider:
             "query": query,
             "license_name": PEXELS_LICENSE_NAME,
             "license_url": PEXELS_LICENSE_URL,
+            "rights_basis": "licensed",
+            "attribution_required": False,
         }
 
     # ── Collect + import ────────────────────────────────────────────────────
@@ -151,7 +159,7 @@ class PexelsVideoProvider:
         from app.training.reference_pipeline import ReferenceTrainingPipeline
 
         pipeline = pipeline or ReferenceTrainingPipeline()
-        queries = [str(q).strip() for q in (queries or self.settings.get("default_queries") or DEFAULT_QUERIES) if str(q).strip()]
+        queries = [str(q).strip() for q in (queries or self.default_queries()) if str(q).strip()]
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.license_dir.mkdir(parents=True, exist_ok=True)
 
@@ -174,12 +182,16 @@ class PexelsVideoProvider:
         for candidate in candidates:
             if len(imported) >= max(1, int(limit)):
                 break
-            uploader_key = f"pexels_{candidate['uploader_id']}"
+            uploader_key = f"{candidate['provider']}_{_safe_name(candidate['uploader_id'])}"
             if uploader_counts.get(uploader_key, 0) >= self.max_per_uploader:
                 skipped.append({"video_id": candidate["video_id"], "reason": "uploader_diversity_cap"})
                 continue
             if not candidate["download_url"]:
                 skipped.append({"video_id": candidate["video_id"], "reason": "no_download_url"})
+                continue
+            duration = candidate.get("duration_seconds")
+            if isinstance(duration, (int, float)) and duration > SHORT_FORM_MAX_SECONDS:
+                skipped.append({"video_id": candidate["video_id"], "reason": "duration_not_short_form"})
                 continue
             path = self._download(candidate)
             if path is None:
@@ -191,7 +203,7 @@ class PexelsVideoProvider:
             try:
                 example = pipeline.import_local_video(
                     path,
-                    rights_basis="licensed",
+                    rights_basis=candidate.get("rights_basis", "licensed"),
                     platform=platform,
                     style_tags=[str(tag)[:40] for tag in tags][:6],
                     creator_group=uploader_key,
@@ -199,9 +211,9 @@ class PexelsVideoProvider:
                     source_url=candidate["page_url"],
                     license_name=candidate["license_name"],
                     license_url=candidate["license_url"],
-                    attribution_required=False,
+                    attribution_required=bool(candidate.get("attribution_required", False)),
                     source_metadata={
-                        "platform": "pexels",
+                        "platform": candidate["provider"],
                         "video_id": candidate["video_id"],
                         "title": f"pexels_{candidate['video_id']}",
                         "channel": candidate["uploader"],
@@ -229,8 +241,11 @@ class PexelsVideoProvider:
 
     # ── Download + license records ─────────────────────────────────────────
 
+    def default_queries(self) -> tuple[str, ...] | list[str]:
+        return self.settings.get("default_queries") or DEFAULT_QUERIES
+
     def _download(self, candidate: dict[str, Any]) -> Optional[pathlib.Path]:
-        destination = self.inbox / f"pexels_{candidate['video_id']}.mp4"
+        destination = self.inbox / f"{candidate['provider']}_{_safe_name(candidate['video_id'])}.mp4"
         if destination.is_file() and destination.stat().st_size > 0:
             return destination
         max_bytes = self.max_file_mb * 1024 * 1024
@@ -264,5 +279,137 @@ class PexelsVideoProvider:
             "acquisition": "official_provider_api_download",
             "media_from_youtube_or_instagram": False,
         }
-        target = self.license_dir / f"pexels_{candidate['video_id']}.license.json"
+        target = self.license_dir / f"{candidate['provider']}_{_safe_name(candidate['video_id'])}.license.json"
         target.write_text(json.dumps(record, indent=2, ensure_ascii=True), encoding="utf-8")
+
+
+def _safe_name(value: Any) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(value))[:80]
+
+
+def _rights_from_license_url(url: Any) -> Optional[tuple[str, str]]:
+    """Classify a license URL into (rights_basis, license_name); None = reject."""
+    text = str(url or "").strip().lower()
+    if not text:
+        return None
+    if "publicdomain" in text or "/zero/" in text or "pd.mark" in text:
+        return "public_domain", "Public Domain / CC0"
+    if "creativecommons.org" in text:
+        return "licensed", "Creative Commons (see license_url)"
+    return None
+
+
+ARCHIVE_DEFAULT_QUERIES = (
+    "valorant gameplay",
+    "esports montage",
+    "gaming montage",
+    "counter strike highlights",
+    "overwatch play montage",
+)
+
+
+class InternetArchiveProvider(PexelsVideoProvider):
+    """archive.org provider: official open APIs, CC/PD-licensed items only.
+
+    No API key required. Only items whose search metadata carries a
+    Creative Commons or Public Domain license URL are accepted, and only
+    small short-form .mp4 derivative files pass (the size cap doubles as a
+    long-VOD guard). Unknown licenses are rejected, never assumed.
+    """
+
+    def __init__(self, api_key: str | None = None, **kwargs: Any) -> None:
+        kwargs.pop("api_key", None)
+        self.api_key = ""
+        self.inbox = pathlib.Path(kwargs.pop("inbox", None) or DEFAULT_INBOX)
+        self.license_dir = pathlib.Path(kwargs.pop("license_dir", None) or DEFAULT_LICENSE_DIR)
+        self.session = kwargs.pop("session", None) or requests.Session()
+        self.max_file_mb = max(1, int(kwargs.pop("max_file_mb", 60)))
+        self.max_per_uploader = max(1, int(kwargs.pop("max_per_uploader", 2)))
+        self.settings = self._load_settings(pathlib.Path(kwargs.pop("config_path", None) or DEFAULT_CONFIG))
+
+    def default_queries(self) -> tuple[str, ...] | list[str]:
+        return self.settings.get("archive_queries") or ARCHIVE_DEFAULT_QUERIES
+
+    def search(self, query: str, per_page: int = 8, orientation: str = "portrait") -> list[dict[str, Any]]:
+        response = self.session.get(
+            "https://archive.org/advancedsearch.php",
+            params={
+                "q": (
+                    f'({query[:100]}) AND mediatype:(movies) AND '
+                    "(licenseurl:(*creativecommons*) OR licenseurl:(*publicdomain*))"
+                ),
+                "fl[]": ["identifier", "title", "creator", "licenseurl"],
+                "rows": max(1, min(50, int(per_page) * 2)),
+                "page": 1,
+                "output": "json",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json() or {}
+        docs = ((payload.get("response") or {}).get("docs")) or []
+        candidates = []
+        for doc in docs:
+            if not isinstance(doc, dict) or not doc.get("identifier"):
+                continue
+            rights = _rights_from_license_url(doc.get("licenseurl"))
+            if rights is None:
+                continue  # unknown license → reject, never assume
+            resolved = self._resolve_short_form_mp4(str(doc["identifier"]))
+            if resolved is None:
+                continue
+            creator = str(doc.get("creator") or doc["identifier"])[:60]
+            candidates.append({
+                "provider": "internet_archive",
+                "video_id": str(doc["identifier"]),
+                "page_url": f"https://archive.org/details/{doc['identifier']}",
+                "download_url": resolved["download_url"],
+                "duration_seconds": resolved["length_seconds"],
+                "uploader": creator,
+                "uploader_id": creator,
+                "query": query,
+                "license_name": rights[1],
+                "license_url": str(doc.get("licenseurl")),
+                "rights_basis": rights[0],
+                "attribution_required": rights[0] == "licensed",
+            })
+            if len(candidates) >= max(1, int(per_page)):
+                break
+        return candidates
+
+    def _resolve_short_form_mp4(self, identifier: str) -> Optional[dict[str, Any]]:
+        """Pick the smallest short-form .mp4 file from an item's metadata."""
+        try:
+            response = self.session.get(f"https://archive.org/metadata/{identifier}", timeout=30)
+            response.raise_for_status()
+            meta = response.json() or {}
+        except (requests.RequestException, ValueError):
+            return None
+        best: Optional[tuple[int, str, Optional[float]]] = None
+        max_bytes = self.max_file_mb * 1024 * 1024
+        for entry in meta.get("files") or []:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "")
+            if not name.lower().endswith(".mp4"):
+                continue
+            try:
+                size = int(float(entry.get("size") or 0))
+            except (TypeError, ValueError):
+                continue
+            if size <= 0 or size > max_bytes:
+                continue  # also rejects giant VOD derivatives
+            try:
+                length = float(entry.get("length"))
+            except (TypeError, ValueError):
+                length = None
+            if length is not None and length > SHORT_FORM_MAX_SECONDS:
+                continue
+            if best is None or size < best[0]:
+                best = (size, name, length)
+        if best is None:
+            return None
+        return {
+            "download_url": f"https://archive.org/download/{identifier}/{best[1]}",
+            "length_seconds": best[2],
+        }

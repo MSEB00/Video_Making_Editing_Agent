@@ -382,6 +382,9 @@ def train() -> None:
 
 
 @cli.command(name="collect-references")
+@click.option('--provider', default='pexels', show_default=True,
+              type=click.Choice(['pexels', 'internet_archive']),
+              help='pexels (needs free PEXELS_API_KEY) or internet_archive (no key; CC/PD items only).')
 @click.option('--limit', default=8, type=click.IntRange(1, 24), show_default=True,
               help='How many licensed references to download and import.')
 @click.option('--query', 'queries', multiple=True,
@@ -390,23 +393,31 @@ def train() -> None:
               type=click.Choice(['portrait', 'landscape', 'square']))
 @click.option('--category', default='gaming', show_default=True,
               type=click.Choice(sorted(['valorant', 'fps', 'gaming', 'esports', 'montage', 'highlights', 'funny'])))
-def collect_references(limit: int, queries: tuple[str, ...], orientation: str, category: str) -> None:
+def collect_references(provider: str, limit: int, queries: tuple[str, ...], orientation: str, category: str) -> None:
     """AUTO training-data collection from legally downloadable licensed media.
 
-    Searches Pexels (license permits download and reuse; requires a free
-    PEXELS_API_KEY in .env), downloads short edited videos with per-uploader
-    diversity caps, persists license records, and imports them into the
-    training dataset with automatic feature analysis. No YouTube/Instagram
-    media is ever downloaded. Follow with: python main.py train
+    Providers: Pexels (license permits download+reuse; free PEXELS_API_KEY in
+    .env) and Internet Archive (official open API, no key; only Creative
+    Commons / Public Domain items accepted). Downloads short edited videos
+    (<=180 s) with per-uploader diversity caps, persists license records, and
+    imports them into the training dataset with automatic feature analysis.
+    No YouTube/Instagram media is ever downloaded. Follow with:
+    python main.py train
     """
-    from app.research.licensed_media_provider import LicensedMediaError, PexelsVideoProvider
+    from app.research.licensed_media_provider import (
+        InternetArchiveProvider,
+        LicensedMediaError,
+        PexelsVideoProvider,
+    )
 
     try:
-        provider = PexelsVideoProvider()
+        media_provider = (
+            InternetArchiveProvider() if provider == "internet_archive" else PexelsVideoProvider()
+        )
     except LicensedMediaError as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(f"Collecting up to {limit} licensed reference(s) from Pexels...")
-    result = provider.collect(
+    click.echo(f"Collecting up to {limit} licensed reference(s) from {provider}...")
+    result = media_provider.collect(
         limit=limit,
         queries=list(queries) or None,
         orientation=orientation,
@@ -414,11 +425,12 @@ def collect_references(limit: int, queries: tuple[str, ...], orientation: str, c
     )
     click.echo(json.dumps({
         "status": "collected",
+        "provider": provider,
         "downloaded_and_imported": len(result["imported"]),
         "skipped": len(result["skipped"]),
         "imported": result["imported"],
         "skip_reasons": result["skipped"],
-        "license": "Pexels License (download+reuse permitted; records saved under training/licensed_licenses/)",
+        "license": "See training/licensed_licenses/ for per-file records",
         "youtube_or_instagram_media_downloaded": False,
         "next_step": "python main.py train   (then: python main.py evaluate)",
     }, indent=2))

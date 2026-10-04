@@ -42,12 +42,18 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
   default, OpenAI optional) analyses low-res frames + media facts, then
   produces a shot list, captions, emphasis, transition plan, and music
   direction; a render-critique step allows one revision pass.
-- **Automatic online learning (legal)** — `collect-references` searches
-  Pexels (license permits download+reuse; free API key), downloads edited
-  short-form clips with per-uploader diversity caps, records licenses, and
-  imports them into the training dataset — no manual annotation, no
-  YouTube/Instagram media ever downloaded (their terms and official APIs
-  allow no frame access; the observation UI remains the YouTube track).
+- **Automatic online learning (legal)** — `collect-references` downloads
+  edited short-form clips (<=180 s duration gate) from two licensed
+  providers: **Pexels** (license permits download+reuse; free API key) and
+  **Internet Archive** (official open API, no key; only Creative
+  Commons / Public Domain items, unknown licenses rejected). Per-uploader
+  diversity caps, persisted license records, automatic feature analysis on
+  import — no manual annotation, no YouTube/Instagram media ever
+  downloaded (their terms and official APIs allow no frame access; the
+  observation UI remains the YouTube track). For Valorant-grade style
+  references, import officially published Riot cinematics/trailers
+  manually via `import-reference --rights-basis licensed` (community use
+  permitted under Riot's content policy — verify current terms).
   YouTube *metadata* priors (duration distributions per category) are
   additionally derived from the research pool and fed to the planner.
 - **Rights-aware audio** — Jamendo API search/download for licensed BGM
@@ -121,9 +127,10 @@ python main.py events "input\my_session\VALORANT clip.mp4" --game valorant
 # Inspect research dataset + candidate pool status (no API calls)
 python main.py research --inspect
 
-# AUTO-collect legally downloadable licensed references (Pexels — free
-# PEXELS_API_KEY in .env), then train with zero manual annotation
-python main.py collect-references --limit 10
+# AUTO-collect legally downloadable licensed references, then train with
+# zero manual annotation. Two providers:
+python main.py collect-references --provider pexels --limit 10           # free PEXELS_API_KEY in .env
+python main.py collect-references --provider internet_archive --limit 6  # no key; CC/PD items only
 python main.py train
 
 # Train/promote the aggregate editing-style model from rights-cleared
