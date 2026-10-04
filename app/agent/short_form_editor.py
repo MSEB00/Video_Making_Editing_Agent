@@ -92,7 +92,12 @@ class ShortFormCreativeEditor:
                 user_request=options.creative_request,
                 user_preferences=preferences,
                 available_sfx=[
-                    {key: item[key] for key in ("filename", "format", "duration", "description", "origin") if key in item}
+                    {
+                        key: item[key]
+                        for key in ("filename", "format", "duration", "description", "origin",
+                                    "type", "mood", "intensity", "tags")
+                        if item.get(key) is not None
+                    }
                     for item in sfx_assets
                 ],
             )
@@ -136,15 +141,23 @@ class ShortFormCreativeEditor:
         review_enabled = os.getenv(
             "CREATIVE_REVIEW_RENDER", str(self.settings.get("review_render", True))
         ).lower() not in {"0", "false", "no"}
-        max_revisions = max(0, min(1, int(self.settings.get("max_revision_passes", 1))))
+        max_revisions = _revision_pass_limit(self.settings)
         revision_count = 0
         if review_enabled:
-            review_context, review_frames = analyze_sources([output_path], max_sources=1)
             reviewer = local_model or self.model
+            review_context, review_frames = analyze_sources([output_path], max_sources=1)
             critique = reviewer.review_render(plan.to_dict(), review_context, review_frames)
             plan.review = critique
-            if max_revisions and critique.get("needs_revision") and critique.get("revision_request"):
-                notify("Review found a material issue; generating one revised plan...")
+            while (
+                revision_count < max_revisions
+                and critique.get("needs_revision")
+                and critique.get("revision_request")
+            ):
+                notify(
+                    f"Review found a material issue; generating revision "
+                    f"{revision_count + 1} of up to {max_revisions}..."
+                )
+                previous_critique = str(critique.get("critique", ""))[:500]
                 revised_raw = reviewer.revise_plan(
                     plan=plan.to_dict(),
                     critique=critique,
@@ -171,20 +184,21 @@ class ShortFormCreativeEditor:
                 render_options = self._renderer_options(
                     options, plan, input_files, selected_track, sfx_assets, media_context["sources"]
                 )
-                notify("Rendering the single permitted revision...")
+                notify(f"Rendering revision {revision_count + 1}...")
                 self.renderer(
                     [input_files[shot.source_index] for shot in plan.shots],
                     output_path,
                     render_options,
                     progress_callback,
                 )
-                revision_count = 1
-                revised_context, revised_frames = analyze_sources([output_path], max_sources=1)
-                final_critique = reviewer.review_render(plan.to_dict(), revised_context, revised_frames)
+                revision_count += 1
+                review_context, review_frames = analyze_sources([output_path], max_sources=1)
+                critique = reviewer.review_render(plan.to_dict(), review_context, review_frames)
                 plan.review = {
-                    **final_critique,
+                    **critique,
                     "revision_applied": True,
-                    "previous_critique": str(critique.get("critique", ""))[:500],
+                    "revision_pass": revision_count,
+                    "previous_critique": previous_critique,
                 }
 
         artifact = plan.to_dict()
@@ -524,3 +538,13 @@ def _as_float(value: Any, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _revision_pass_limit(settings: dict[str, Any]) -> int:
+    """Review→revise budget: env MAX_REVISION_PASSES overrides config, clamped 0..3."""
+    raw = os.getenv("MAX_REVISION_PASSES", settings.get("max_revision_passes", 1))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 1
+    return max(0, min(3, value))

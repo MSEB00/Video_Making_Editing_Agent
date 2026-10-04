@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/editing/editor.py
 ---------------------
 Full-fledged video editing engine for the Gaming Video Agent.
@@ -12,9 +12,12 @@ Supports:
 """
 from __future__ import annotations
 
+import json
+import math
 import os
 import random
 import pathlib
+import re
 import subprocess
 from dataclasses import dataclass, field
 from typing import List, Optional, Callable, Dict, Any
@@ -280,6 +283,7 @@ def render_edited_video(
         cmd_inputs.extend(["-i", str(path.resolve())])
 
     filter_lines = []
+    audio_lines: List[str] = []  # audio-only mirror of the graph, reused for the loudnorm measurement pass
 
     # Format / Scale each clip into standard stream
     is_vertical = (options.aspect_ratio == "9:16")
@@ -340,11 +344,11 @@ def render_edited_video(
             if options.planned_audio_gains_db and i < len(options.planned_audio_gains_db):
                 gain_db = max(-12.0, min(24.0, float(options.planned_audio_gains_db[i])))
             gain_filter = f"volume={gain_db}dB," if gain_db else ""
-            filter_lines.append(
+            audio_lines.append(
                 f"[{i}:a]{atrim_filter}{gain_filter}aformat=sample_rates=44100:channel_layouts=stereo[a_in_{i}];"
             )
         else:
-            filter_lines.append(f"anullsrc=r=44100:cl=stereo,atrim=0:{clip_durations[i]}[a_in_{i}];")
+            audio_lines.append(f"anullsrc=r=44100:cl=stereo,atrim=0:{clip_durations[i]}[a_in_{i}];")
 
     # 5. Chain transitions
     final_video_label = "[v_in_0]"
@@ -409,9 +413,9 @@ def render_edited_video(
                 chain += f"afade=t=in:st=0:d={round(fade_in, 3)},"
             delay_ms = int(round(shot_output_starts[i] * 1000))
             chain += f"adelay={delay_ms}|{delay_ms}[a_placed_{i}];"
-            filter_lines.append(chain)
+            audio_lines.append(chain)
         placed_labels = "".join(f"[a_placed_{i}]" for i in range(num_clips))
-        filter_lines.append(
+        audio_lines.append(
             f"{placed_labels}amix=inputs={num_clips}:duration=longest:normalize=0,"
             f"asetpts=PTS-STARTPTS[a_timeline];"
         )
@@ -421,7 +425,7 @@ def render_edited_video(
         v_inputs = "".join(f"[v_in_{i}]" for i in range(num_clips))
         a_inputs = "".join(f"[a_in_{i}]" for i in range(num_clips))
         filter_lines.append(f"{v_inputs}concat=n={num_clips}:v=1:a=0[v_concat];")
-        filter_lines.append(f"{a_inputs}concat=n={num_clips}:v=0:a=1[a_concat];")
+        audio_lines.append(f"{a_inputs}concat=n={num_clips}:v=0:a=1[a_concat];")
         final_video_label = "[v_concat]"
         final_audio_label = "[a_concat]"
         current_time = sum(clip_durations)
@@ -470,18 +474,18 @@ def render_edited_video(
     # 7. Mix BGM if enabled
     if bgm_index is not None:
         fade_out_st = max(0.5, current_time - 1.5)
-        filter_lines.append(
+        audio_lines.append(
             f"[{bgm_index}:a]aloop=loop=-1:size=2e+09,volume={options.bgm_volume},"
             f"afade=t=in:ss=0:d=0.8,afade=t=out:st={round(fade_out_st, 2)}:d=1.5[bgm_fx];"
         )
         if options.duck_bgm_to_original_audio:
-            filter_lines.append(
+            audio_lines.append(
                 f"{final_audio_label}asplit=2[program_audio][duck_key];"
                 f"[bgm_fx][duck_key]sidechaincompress=threshold=0.025:ratio=3:attack=80:release=500[bgm_ducked];"
                 "[program_audio][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=2[a_mixed];"
             )
         else:
-            filter_lines.append(
+            audio_lines.append(
                 f"{final_audio_label}[bgm_fx]amix=inputs=2:duration=first:dropout_transition=2[a_mixed];"
             )
         final_audio_label = "[a_mixed]"
@@ -492,24 +496,42 @@ def render_edited_video(
             input_index = sfx_input_start + index
             delay_ms = round(start * 1000)
             sfx_label = f"[planned_sfx_{index}]"
-            filter_lines.append(
+            audio_lines.append(
                 f"[{input_index}:a]aformat=sample_rates=44100:channel_layouts=stereo,"
                 f"volume={volume},adelay={delay_ms}|{delay_ms}{sfx_label};"
             )
             sfx_labels.append(sfx_label)
-        filter_lines.append(
+        audio_lines.append(
             f"{final_audio_label}{''.join(sfx_labels)}"
             f"amix=inputs={len(sfx_labels) + 1}:duration=first:dropout_transition=0:normalize=0,"
             f"alimiter=limit=0.95[a_with_planned_sfx];"
         )
         final_audio_label = "[a_with_planned_sfx]"
 
+    loudnorm_pending: Optional[tuple] = None
     if options.creative_mode:
         target_lufs = max(-30.0, min(-8.0, float(options.audio_normalization_target_lufs)))
-        filter_lines.append(
-            f"{final_audio_label}loudnorm=I={target_lufs}:TP=-1.5:LRA=11[a_normalized];"
-        )
-        final_audio_label = "[a_normalized]"
+        # Two-pass loudnorm is applied after the graph is assembled (see
+        # _measure_loudnorm below): dynamic single-pass loudnorm proved
+        # unbounded in memory when combined with a slower video encoder and
+        # is non-deterministic across review/revision re-renders.
+        loudnorm_pending = (final_audio_label, target_lufs)
+
+    # Optional graph throttle for memory-constrained machines. When the filter
+    # graph runs far ahead of a slow encoder, ffmpeg's in-flight frame queue
+    # grows (≈3 MB per 1080x1920 frame) and can exhaust RAM. Setting
+    # FFMPEG_GRAPH_THROTTLE=<speed> (e.g. 1.0 = realtime) bounds the backlog.
+    # Off by default: hardware-encoder machines render faster unthrottled.
+    throttle = os.getenv("FFMPEG_GRAPH_THROTTLE", "").strip()
+    if throttle:
+        try:
+            throttle_speed = float(throttle)
+        except ValueError:
+            throttle_speed = 0.0
+            log.warning("Ignoring invalid FFMPEG_GRAPH_THROTTLE=%r", throttle)
+        if throttle_speed > 0:
+            filter_lines.append(f"{final_video_label}realtime=speed={throttle_speed}[v_throttled];")
+            final_video_label = "[v_throttled]"
 
     # Force 4:2:0 chroma subsampling on the final video chain. Without this,
     # libx264 may negotiate the filter graph up to the High 4:4:4 Predictive
@@ -518,8 +540,17 @@ def render_edited_video(
     filter_lines.append(f"{final_video_label}format=yuv420p[v_compat];")
     final_video_label = "[v_compat]"
 
-    # Strip trailing semicolon from last filter line
-    filter_complex_str = "".join(filter_lines).rstrip(";")
+    # Strip trailing semicolon from last filter line; keep the audio-only
+    # graph separate so the loudnorm measurement pass can run it cheaply
+    # (ffmpeg requires every declared graph output to be mapped).
+    audio_filter_str = "".join(audio_lines).rstrip(";")
+    filter_complex_str = ("".join(filter_lines) + "".join(audio_lines)).rstrip(";")
+
+    if loudnorm_pending is not None:
+        pre_label, target_lufs = loudnorm_pending
+        filter_complex_str, final_audio_label = _append_two_pass_loudnorm(
+            cmd_inputs, filter_complex_str, audio_filter_str, pre_label, target_lufs
+        )
 
     _notify("⚡", "Rendering final video (FFmpeg processing)...")
 
@@ -568,3 +599,93 @@ def render_edited_video(
     _notify("✅", f"Video render verified! Output: {output_path.name}")
     return output_path
 
+
+def _measure_loudnorm(
+    cmd_inputs: List[str],
+    audio_filter: str,
+    pre_label: str,
+    target_lufs: float,
+) -> Optional[Dict[str, float]]:
+    """Run the audio-only measurement pass of two-pass loudnorm.
+
+    Executes ONLY the audio half of the filter graph with `-f null` (video
+    branches are excluded entirely: ffmpeg requires every declared graph
+    output to be mapped). Cheap, fast, and memory-safe. Returns the measured
+    values or None when measurement fails.
+    """
+    measure_fc = (
+        f"{audio_filter};"
+        f"{pre_label}loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json[a_measure]"
+    )
+    cmd = [
+        get_ffmpeg_path(), "-hide_banner", "-nostats", "-y",
+        *cmd_inputs,
+        "-filter_complex", measure_fc,
+        "-map", "[a_measure]",
+        "-f", "null", "-",
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if res.returncode != 0:
+        log.warning("Loudnorm measurement pass failed (rc=%s)", res.returncode)
+        return None
+    match = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", res.stderr, re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+        measured = {
+            "measured_I": float(data["input_i"]),
+            "measured_TP": float(data["input_tp"]),
+            "measured_LRA": float(data["input_lra"]),
+            "measured_thresh": float(data["input_thresh"]),
+            "offset": float(data["target_offset"]),
+        }
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not all(math.isfinite(value) for value in measured.values()):
+        return None  # e.g. pure-silence streams report -inf
+    return measured
+
+
+def _append_two_pass_loudnorm(
+    cmd_inputs: List[str],
+    filter_complex: str,
+    audio_filter: str,
+    pre_label: str,
+    target_lufs: float,
+) -> tuple[str, str]:
+    """Append linear (two-pass) loudnorm to the audio chain.
+
+    Linear mode preserves dynamics, is deterministic across re-renders (the
+    review/revise loop relies on this), and avoids the unbounded buffering
+    dynamic mode exhibits when the video encoder is the slower stream.
+    Falls back to single-pass dynamic normalization if measurement fails.
+    Returns (updated filter_complex, new final audio label).
+    """
+    measured = _measure_loudnorm(cmd_inputs, audio_filter, pre_label, target_lufs)
+    if measured is not None:
+        loudnorm_args = (
+            f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11"
+            f":measured_I={measured['measured_I']}"
+            f":measured_TP={measured['measured_TP']}"
+            f":measured_LRA={measured['measured_LRA']}"
+            f":measured_thresh={measured['measured_thresh']}"
+            f":offset={measured['offset']}"
+            f":linear=true"
+        )
+        log.info(
+            "Loudnorm measured input at %.1f LUFS / TP %.1f dB; applying linear normalization to %.1f LUFS",
+            measured["measured_I"], measured["measured_TP"], target_lufs,
+        )
+    else:
+        loudnorm_args = f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11"
+        log.warning("Loudnorm measurement unavailable; falling back to single-pass dynamic mode.")
+    updated = (
+        f"{filter_complex};"
+        f"{pre_label}{loudnorm_args},"
+        f"aformat=sample_rates=44100:channel_layouts=stereo[a_normalized]"
+    )
+    return updated, "[a_normalized]"
