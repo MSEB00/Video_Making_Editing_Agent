@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import json
+import os
 import pathlib
 import datetime as dt
 import time
@@ -514,6 +515,200 @@ def events(video_path: str, game: str) -> None:
             "Compare event times against real kills; if detection misses or "
             "over-fires, tune event_detection thresholds in config/<game>.yaml."
         ),
+    }, indent=2))
+
+
+@cli.command(name="train-mode")
+@click.option('--limit', default=6, type=click.IntRange(1, 24), show_default=True,
+              help='Max new licensed references to download this run.')
+@click.option('--offline', is_flag=True,
+              help='Skip all downloads; train/evaluate on the existing dataset only.')
+@click.option('--with-youtube-pool/--no-youtube-pool', default=True, show_default=True,
+              help='Also refresh the YouTube metadata pool (metadata only, needs YOUTUBE_DATA_API_KEY).')
+def train_mode(limit: int, offline: bool, with_youtube_pool: bool) -> None:
+    """SELF-TRAINING LOOP: legal online collection → dataset → train → evaluate.
+
+    Designed for repeated runs. Each run rotates through a gaming-montage
+    query bank for the Internet Archive (CC/PD items only), uses Pexels when
+    PEXELS_API_KEY is set, refreshes YouTube metadata priors (metadata only —
+    never downloads YouTube/Instagram media), then trains a candidate model
+    (promoted only when it beats baseline and the active model) and reports
+    honest statistics. Close the loop after each edit with:
+    python main.py feedback <job-id> --rating 1 --tags hook_good
+    """
+    from app.training.reference_pipeline import ReferenceTrainingPipeline
+
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    stages: list[dict] = []
+    pipeline = ReferenceTrainingPipeline()
+
+    if not offline:
+        from app.research.licensed_media_provider import (
+            ARCHIVE_QUERY_BANK,
+            InternetArchiveProvider,
+            PexelsVideoProvider,
+        )
+
+        # Rotate 3 query-bank entries per run so repeated runs keep finding
+        # NEW items instead of re-hitting dedup on identical top results.
+        state_path = pipeline.root / "licensed_state.json"
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            state = {}
+        bank = list(ARCHIVE_QUERY_BANK)
+        offset = int(state.get("query_offset", 0)) % len(bank)
+        picked = [bank[(offset + index) % len(bank)] for index in range(3)]
+        click.echo(f"[TRAINING] Internet Archive (CC/PD only), queries: {picked}")
+        try:
+            result = InternetArchiveProvider().collect(limit=limit, queries=picked)
+            stages.append({
+                "stage": "internet_archive",
+                "imported": len(result["imported"]),
+                "skipped": len(result["skipped"]),
+                "queries": picked,
+                "files": [item["file"] for item in result["imported"]],
+            })
+        except Exception as exc:
+            stages.append({"stage": "internet_archive", "error": type(exc).__name__})
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps({
+            "query_offset": (offset + 3) % len(bank),
+            "runs": int(state.get("runs", 0)) + 1,
+            "last_queries": picked,
+            "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }, indent=2), encoding="utf-8")
+
+        if os.getenv("PEXELS_API_KEY"):
+            click.echo("[TRAINING] Pexels rhythm/grammar references...")
+            try:
+                result = PexelsVideoProvider().collect(limit=limit)
+                stages.append({"stage": "pexels", "imported": len(result["imported"]),
+                               "skipped": len(result["skipped"])})
+            except Exception as exc:
+                stages.append({"stage": "pexels", "error": type(exc).__name__})
+        else:
+            stages.append({"stage": "pexels", "skipped": "PEXELS_API_KEY not set"})
+
+        if with_youtube_pool:
+            if os.getenv("YOUTUBE_DATA_API_KEY") or os.getenv("YOUTUBE_API_KEY"):
+                click.echo("[TRAINING] Refreshing YouTube metadata pool (metadata only)...")
+                try:
+                    from app.training.collector import collect_candidate_pool
+                    pool = collect_candidate_pool()
+                    stages.append({"stage": "youtube_metadata_pool",
+                                   "candidate_count": pool.get("candidate_count"),
+                                   "queries_this_run": pool.get("queries_this_run")})
+                except Exception as exc:
+                    stages.append({"stage": "youtube_metadata_pool", "error": type(exc).__name__})
+            else:
+                stages.append({"stage": "youtube_metadata_pool",
+                               "skipped": "YOUTUBE_DATA_API_KEY not set"})
+    else:
+        stages.append({"stage": "downloads", "skipped": "offline mode"})
+
+    examples = pipeline._read_examples()
+    unique = {str(item.get("reference_id")): item for item in examples if item.get("reference_id")}
+    creators = len({item.get("creator_group") or item.get("reference_id") for item in unique.values()})
+    stages.append({"stage": "dataset", "reference_count": len(unique), "creator_count": creators})
+
+    click.echo("[TRAINING] Training candidate model...")
+    train_result = pipeline.train_candidate()
+    stages.append({"stage": "train", **{
+        key: train_result.get(key)
+        for key in ("status", "version", "example_count", "creator_count",
+                    "training_count", "validation_count", "validation_mae",
+                    "baseline_mae", "test_mae", "limitations")
+        if train_result.get(key) is not None
+    }})
+
+    model_stage: dict = {"status": "no_active_model"}
+    active_path = pipeline.patterns / "active.json"
+    if active_path.is_file():
+        try:
+            active = json.loads(active_path.read_text(encoding="utf-8"))
+            model_stage = {"status": "active", "version": active.get("version"),
+                           "validation": active.get("validation")}
+        except json.JSONDecodeError:
+            pass
+    stages.append({"stage": "model", **model_stage})
+
+    click.echo(json.dumps({
+        "training_mode_report": {
+            "started_at": started,
+            "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "offline": offline,
+            "stages": stages,
+        },
+        "next_steps": [
+            "python main.py evaluate",
+            "python main.py edit input\\<your_session> --platform youtube_shorts --duration 40 --request \"intense clutch montage\"",
+            "python main.py feedback <job-id> --rating 1 --tags hook_good,kills_well_aligned",
+            "Then run train-mode again — your feedback signals feed the next candidate model.",
+        ],
+    }, indent=2))
+
+
+@cli.command()
+@click.argument('edit_id')
+@click.option('--rating', required=True, type=click.Choice(['1', '-1']),
+              help='1 = good edit, -1 = bad edit.')
+@click.option('--tags', default='',
+              help='Comma-separated: hook_good, kills_well_aligned, kills_misaligned, '
+                   'too_fast, too_slow, too_many_effects, bgm_mismatch, captions_good, transitions_bad')
+@click.option('--note', default='', help='Free-text note (max 1000 chars).')
+def feedback(edit_id: str, rating: str, tags: str, note: str) -> None:
+    """Record YOUR validation of a finished edit into the training loop.
+
+    Only completed jobs are accepted. Per-tag positive/negative counts become
+    feedback_signals attached to every future candidate model — this is how
+    your verdicts steer training without any manual dataset work.
+    """
+    from app.storage.db import SessionLocal
+    from app.storage.models import Job
+    from app.training.reference_pipeline import FEEDBACK_TAGS, ReferenceTrainingPipeline
+
+    db = SessionLocal()
+    try:
+        try:
+            job = db.get(Job, int(edit_id))
+        except (TypeError, ValueError):
+            job = None
+        if job is None:
+            raise click.ClickException(f"Job {edit_id!r} not found.")
+        if job.status != "completed" or not job.output_path:
+            raise click.ClickException(
+                f"Feedback is only accepted for completed edits (job {job.id} is '{job.status}')."
+            )
+        context: dict = {"job_id": job.id, "output": pathlib.Path(job.output_path).name}
+        plan_path = pathlib.Path(job.output_path).with_suffix(".edit-plan.json")
+        if plan_path.is_file():
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                context.update({"strategy": plan.get("strategy"), "platform": plan.get("platform")})
+            except (OSError, json.JSONDecodeError):
+                pass
+    finally:
+        db.close()
+
+    requested = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    selected = [tag for tag in requested if tag in FEEDBACK_TAGS]
+    ignored = [tag for tag in requested if tag not in FEEDBACK_TAGS]
+    path = ReferenceTrainingPipeline().record_feedback(
+        edit_id=str(edit_id),
+        rating=int(rating),
+        tags=selected,
+        notes=note[:1000],
+        context=context,
+    )
+    click.echo(json.dumps({
+        "status": "recorded",
+        "edit_id": edit_id,
+        "rating": int(rating),
+        "tags": selected,
+        "ignored_tags": ignored,
+        "file": str(path),
+        "used_by": "feedback_signals in every future trained model version",
     }, indent=2))
 
 

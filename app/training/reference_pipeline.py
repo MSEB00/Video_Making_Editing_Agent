@@ -20,6 +20,13 @@ PLATFORMS = ("youtube_shorts", "instagram_reels", "gaming_shorts", "all")
 DATASET_CATEGORIES = {"valorant", "fps", "gaming", "esports", "montage", "highlights", "funny"}
 ALLOWED_VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
 
+# Human validation vocabulary shared by dashboard and CLI feedback paths.
+FEEDBACK_TAGS = frozenset({
+    "too_many_effects", "too_slow", "too_fast", "bgm_mismatch",
+    "captions_good", "transitions_bad", "hook_good",
+    "kills_well_aligned", "kills_misaligned",
+})
+
 
 class ReferenceTrainingPipeline:
     """Analyze only media the caller affirmatively identifies as rights-cleared."""

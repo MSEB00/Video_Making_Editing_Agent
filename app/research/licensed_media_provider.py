@@ -307,6 +307,27 @@ ARCHIVE_DEFAULT_QUERIES = (
     "overwatch play montage",
 )
 
+# Rotating bank for 'train-mode': each run picks the next slice so repeated
+# runs keep discovering NEW items instead of re-hitting dedup on the same
+# top search results.
+ARCHIVE_QUERY_BANK = (
+    "valorant gameplay",
+    "esports montage",
+    "gaming montage",
+    "counter strike highlights",
+    "overwatch play montage",
+    "fortnite montage",
+    "apex legends montage",
+    "csgo highlights",
+    "call of duty montage",
+    "mlg montage",
+    "pubg highlights",
+    "rocket league montage",
+    "gaming funny moments",
+    "speedrun highlights edit",
+    "halo gameplay montage",
+)
+
 
 class InternetArchiveProvider(PexelsVideoProvider):
     """archive.org provider: official open APIs, CC/PD-licensed items only.

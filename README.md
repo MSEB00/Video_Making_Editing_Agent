@@ -139,7 +139,30 @@ python main.py train
 
 # Report dataset + active-model statistics without retraining
 python main.py evaluate
+
+# SELF-TRAINING LOOP — run repeatedly; each run rotates fresh Archive queries,
+# uses Pexels when keyed, refreshes YouTube metadata priors, trains, reports:
+python main.py train-mode
+python main.py train-mode --offline      # train/evaluate on existing dataset only
+
+# Record YOUR verdict on a finished edit — feeds every future model version:
+python main.py feedback 79 --rating 1 --tags hook_good,kills_well_aligned
+python main.py feedback 80 --rating -1 --tags too_slow --note "hold longer after multi-kills"
 ```
+
+### The self-training cycle
+
+```
+train-mode  →  edit  →  watch  →  feedback  →  train-mode  →  ...
+ (collect      (create   (you      (your        (your signals
+  legal refs,   with       judge)   verdicts     shape the next
+  train, gate)  model)              recorded)    candidate model)
+```
+
+Tags: `hook_good`, `kills_well_aligned`, `kills_misaligned`, `too_fast`,
+`too_slow`, `too_many_effects`, `bgm_mismatch`, `captions_good`,
+`transitions_bad`. Negative tags on -1 ratings and positive tags on +1
+ratings accumulate as `feedback_signals` inside each model version.
 
 Style presets: `FAST_PACED` (default), `MONTAGE`, `CINEMATIC`, `SIMPLE`.
 Platforms: `youtube` (16:9), `youtube_shorts` / `shorts` / `instagram_reels` /
