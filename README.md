@@ -39,11 +39,14 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
   (with metadata cache), plus a locally generated SFX library. No
   copyrighted audio is ever fetched.
 - **YouTube research workflow** — discovers public video *metadata only*
-  (never downloads media) via the YouTube Data API; a local-only
-  `/research` page supports manual observation notes; explicitly approved
-  observations plus your own rights-cleared references feed an offline
-  training pipeline that learns an aggregate editing-style profile
-  (cut density, caption density, early payoff, ...).
+  (never downloads media) via the YouTube Data API with a diversity-aware
+  curriculum that preferentially researches underrepresented styles; a
+  local-only `/research` page supports manual observation notes; explicitly
+  approved observations plus your own rights-cleared references feed an
+  offline training pipeline that learns aggregate editing-style profiles
+  (cut density, caption density, pacing irregularity, silence ratio, ...),
+  context-conditional edit probabilities P(decision | intensity/speech),
+  and data-driven style clusters (k-means with silhouette selection).
 - **Publishing** — YouTube upload via OAuth (desktop client) and
   Instagram Reels via the Graph API.
 - **Job store** — SQLite via SQLAlchemy (`jobs`, `media`, `events`).
@@ -87,12 +90,24 @@ python main.py process input\my_session --style MONTAGE --platform youtube_short
 # Only create the queued job record, run later from the dashboard
 python main.py process input\my_session --queue-only
 
+# Full CREATIVE pipeline: AI plan → render → review → revise (uses the
+# hosted model when GEMINI_API_KEY/OPENAI_API_KEY is set, otherwise the
+# measured local feature planner). Writes output\job_N_final.mp4 plus an
+# .edit-plan.json artifact with full decision provenance.
+python main.py edit input\my_session --platform youtube_shorts --duration 30 --request "fast montage, punchy hook"
+
 # Discover reference metadata for a research topic (needs YOUTUBE_DATA_API_KEY)
 python main.py research --topic "valorant clutch shorts" --limit 5
 
-# Train/promote the aggregate editing-style profile from rights-cleared
+# Inspect research dataset + candidate pool status (no API calls)
+python main.py research --inspect
+
+# Train/promote the aggregate editing-style model from rights-cleared
 # references and explicitly approved observations
 python main.py train
+
+# Report dataset + active-model statistics without retraining
+python main.py evaluate
 ```
 
 Style presets: `FAST_PACED` (default), `MONTAGE`, `CINEMATIC`, `SIMPLE`.
@@ -171,7 +186,9 @@ pytest tests/ -q
 Requires FFmpeg on `PATH` (tests render tiny synthetic clips). The suite
 covers editor segment/transition selection, the audio mixdown, orchestrator
 DB flow, dashboard intent parsing, research routes, the AI provider config,
-the SFX library, and the training pipeline.
+the SFX library, the training pipeline, conditional-probability learning,
+style-cluster discovery, curriculum research, the revision loop, and the
+CLI commands (61 tests).
 
 ## Rendering notes
 
@@ -183,6 +200,13 @@ the SFX library, and the training pipeline.
   Override with `FFMPEG_X264_PRESET` / `FFMPEG_X264_CRF`.
 - Audio is assembled as a single bounded mixdown (per-clip fade envelopes
   + `adelay` placement + one `amix`), which scales to any number of clips.
+- Creative-mode loudness normalization uses **two-pass linear loudnorm**:
+  an audio-only measurement pass (cheap, memory-safe) followed by a
+  deterministic `linear=true` application — preserves dynamics and keeps
+  re-renders in the review/revise loop bit-stable. Output audio is always
+  pinned to 44.1 kHz stereo (single-pass loudnorm otherwise emits 96 kHz).
+- `FFMPEG_GRAPH_THROTTLE` (optional) caps filter-graph speed relative to
+  realtime for very low-RAM machines; off by default.
 
 ## Legal / rights
 
