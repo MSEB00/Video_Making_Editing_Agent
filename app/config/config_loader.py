@@ -2,8 +2,8 @@
 app/config/config_loader.py
 ---------------------------
 Utility to read YAML configuration files and overlay values from ``.env``
-environment variables. Uses ``ruamel.yaml`` for preserving order (already in
-requirements). Returns a simple dict‑like object.
+environment variables. Uses ``PyYAML`` (see requirements.txt). Returns a
+plain dict with all ``config/*.yaml`` files deep-merged.
 """
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ def _deep_merge(dst: Dict[str, Any], src: Dict[str, Any]) -> None:
 
 
 def load_config(config_dir: str | Path = None) -> Dict[str, Any]:
-    """Load all ``*.yaml`` files from *config_dir* (or the default
-    ``D:\\gaming_video_agent\\config``) and merge them.
+    """Load all ``*.yaml`` files from *config_dir* (or the project's
+    ``config/`` directory) and deep-merge them.
 
     Environment variables override any matching top‑level key. For nested
     overrides you can use ``APP__LOG_LEVEL`` style – the loader expands ``__``

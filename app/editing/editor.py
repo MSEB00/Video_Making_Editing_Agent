@@ -3,7 +3,7 @@ app/editing/editor.py
 ---------------------
 Full-fledged video editing engine for the Gaming Video Agent.
 Supports:
-  - Dynamic transitions (xfade / acrossfade) with multiple styles:
+  - Dynamic transitions (video xfade + delay/amix audio crossfades) with multiple styles:
     fade, wipeleft, wiperight, slideleft, slideright, circlecrop, dissolve, fadeblack, random
   - Background music (BGM) mixing with volume balancing, looping, and fade-in/fade-out
     - Aspect ratio conversions (16:9 YouTube, 9:16 YouTube Shorts / Instagram Reels)
@@ -294,17 +294,27 @@ def render_edited_video(
         )
 
         if is_vertical:
-            portrait_grade = "eq=saturation=1.18:contrast=1.08,unsharp=5:5:0.6:3:3:0," if options.color_grade else ""
             punch_zoom = options.planned_emphasis and i < len(options.planned_emphasis) and any(
                 "punch_zoom" in item.lower() for item in options.planned_emphasis[i]
             )
+            # Crop to 9:16 at source resolution FIRST, then scale up to the
+            # target canvas. The previous scale-to-cover-then-crop order built
+            # a huge intermediate frame (e.g. 3687x2074 from a 16:9 source —
+            # >3x the final pixel count, upscaled before cropping), which
+            # wasted RAM (OOM on constrained machines) and encode time.
+            # min(iw, ih*9/16) / min(ih, iw*16/9) keeps the crop inside the
+            # frame for sources that are already vertical, without distortion.
+            # NOTE: color grading is applied once after the transition chain
+            # (step 6), mirroring the landscape path — per-branch eq/unsharp
+            # nodes multiply filter-graph memory without visual benefit.
+            zoom_div = "/1.08" if punch_zoom else ""
             portrait_scale = (
-                f"scale={round(w * 1.08)}:{round(h * 1.08)}:force_original_aspect_ratio=increase,crop={w}:{h},"
-                if punch_zoom else
-                f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+                f"crop=w='trunc(min(iw,ih*9/16){zoom_div}/2)*2':"
+                f"h='trunc(min(ih,iw*16/9){zoom_div}/2)*2',"
+                f"scale={w}:{h},"
             )
             filter_lines.append(
-                f"[{i}:v]{trim_filter}{portrait_scale}setsar=1,fps=60,{portrait_grade}"
+                f"[{i}:v]{trim_filter}{portrait_scale}setsar=1,fps=60,"
                 f"settb=AVTB,format=yuv420p[v_in_{i}];"
             )
         else:
@@ -344,6 +354,9 @@ def render_edited_video(
     previous_transition = None
 
     if use_transitions:
+        # boundary_fades[k] = audio crossfade duration across the boundary
+        # between clips k-1 and k (absent for hard cuts).
+        boundary_fades: Dict[int, float] = {}
         for k in range(1, num_clips):
             planned_transition = (
                 options.transition_sequence[k - 1]
@@ -352,17 +365,12 @@ def render_edited_video(
             )
             if planned_transition.lower() in ("none", "cut", "off", "false"):
                 v_out = f"[v_cut_{k}]"
-                a_out = f"[a_cut_{k}]"
                 filter_lines.append(
                     f"{final_video_label}[v_in_{k}]concat=n=2:v=1:a=0{v_out};"
-                )
-                filter_lines.append(
-                    f"{final_audio_label}[a_in_{k}]concat=n=2:v=0:a=1{a_out};"
                 )
                 shot_output_starts.append(current_time)
                 current_time += clip_durations[k]
                 final_video_label = v_out
-                final_audio_label = a_out
                 previous_transition = None
                 continue
 
@@ -372,18 +380,42 @@ def render_edited_video(
             offset = max(0.1, current_time - t_dur)
             shot_output_starts.append(offset)
             current_time = offset + clip_durations[k]
+            boundary_fades[k] = t_dur
 
             v_out = f"[v_trans_{k}]"
-            a_out = f"[a_trans_{k}]"
-
             filter_lines.append(
                 f"{final_video_label}[v_in_{k}]xfade=transition={cur_transition}:duration={t_dur}:offset={round(offset, 3)}{v_out};"
             )
-            filter_lines.append(
-                f"{final_audio_label}[a_in_{k}]acrossfade=d={t_dur}{a_out};"
-            )
             final_video_label = v_out
-            final_audio_label = a_out
+
+        # Assemble the audio timeline as ONE bounded-memory mixdown: apply
+        # crossfade envelopes at overlapping boundaries, place every clip at
+        # its exact output offset with adelay, then sum with a single amix.
+        # (Chained acrossfade nodes buffer the entire preceding stream at
+        # every level; with 3+ clips that grows unbounded and can OOM-kill
+        # ffmpeg before a single frame is encoded.)
+        for i in range(num_clips):
+            chain = f"[a_in_{i}]"
+            fade_out = boundary_fades.get(i + 1)
+            if fade_out:
+                fade_out = min(fade_out, max(0.05, clip_durations[i] * 0.45))
+                chain += (
+                    f"afade=t=out:st={round(max(0.0, clip_durations[i] - fade_out), 3)}"
+                    f":d={round(fade_out, 3)},"
+                )
+            fade_in = boundary_fades.get(i)
+            if fade_in:
+                fade_in = min(fade_in, max(0.05, clip_durations[i] * 0.45))
+                chain += f"afade=t=in:st=0:d={round(fade_in, 3)},"
+            delay_ms = int(round(shot_output_starts[i] * 1000))
+            chain += f"adelay={delay_ms}|{delay_ms}[a_placed_{i}];"
+            filter_lines.append(chain)
+        placed_labels = "".join(f"[a_placed_{i}]" for i in range(num_clips))
+        filter_lines.append(
+            f"{placed_labels}amix=inputs={num_clips}:duration=longest:normalize=0,"
+            f"asetpts=PTS-STARTPTS[a_timeline];"
+        )
+        final_audio_label = "[a_timeline]"
     elif num_clips > 1:
         # Simple concat without xfade
         v_inputs = "".join(f"[v_in_{i}]" for i in range(num_clips))
@@ -400,8 +432,15 @@ def render_edited_video(
             elapsed += duration
 
     # 6. Color grading & visual enhancement
-    if options.color_grade and not is_vertical:
-        filter_lines.append(f"{final_video_label}eq=saturation=1.12:contrast=1.04[v_colored];")
+    # Applied once on the combined stream (never per input branch): parallel
+    # grade nodes feeding xfade caused unbounded filter-graph memory growth.
+    if options.color_grade:
+        grade_chain = (
+            "eq=saturation=1.18:contrast=1.08,unsharp=5:5:0.6:3:3:0"
+            if is_vertical else
+            "eq=saturation=1.12:contrast=1.04"
+        )
+        filter_lines.append(f"{final_video_label}{grade_chain}[v_colored];")
         final_video_label = "[v_colored]"
 
     # Optional Title Text
@@ -472,15 +511,30 @@ def render_edited_video(
         )
         final_audio_label = "[a_normalized]"
 
+    # Force 4:2:0 chroma subsampling on the final video chain. Without this,
+    # libx264 may negotiate the filter graph up to the High 4:4:4 Predictive
+    # profile (~3x frame memory, poor player support, disallowed for optimal
+    # YouTube processing).
+    filter_lines.append(f"{final_video_label}format=yuv420p[v_compat];")
+    final_video_label = "[v_compat]"
+
     # Strip trailing semicolon from last filter line
     filter_complex_str = "".join(filter_lines).rstrip(";")
 
     _notify("⚡", "Rendering final video (FFmpeg processing)...")
 
-    # Try hardware encoder first (NVENC), fallback to libx264
+    # Try hardware encoder first (NVENC), fallback to libx264.
+    # The CPU preset adapts to core count: on weak machines 'fast' cannot keep
+    # up with a 1080p60 filter graph, and ffmpeg's in-flight frame queue then
+    # grows until the process is OOM-killed. Override via env if needed.
+    cpu_preset = os.getenv("FFMPEG_X264_PRESET", "").strip().lower()
+    if not cpu_preset:
+        cores = os.cpu_count() or 4
+        cpu_preset = "ultrafast" if cores <= 2 else "veryfast" if cores <= 4 else "fast"
+    cpu_crf = os.getenv("FFMPEG_X264_CRF", "19").strip() or "19"
     encoders_to_try = [
         (["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "20"], "NVIDIA NVENC"),
-        (["-c:v", "libx264", "-preset", "fast", "-crf", "19"], "libx264 CPU")
+        (["-c:v", "libx264", "-preset", cpu_preset, "-crf", cpu_crf], f"libx264 CPU ({cpu_preset})"),
     ]
 
     render_success = False
@@ -494,6 +548,7 @@ def render_edited_video(
             "-map", final_video_label,
             "-map", final_audio_label,
             *enc_args,
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             str(output_path)
         ]

@@ -38,35 +38,102 @@ def initdb() -> None:
     log.info("Database initialised via CLI")
 
 
-@cli.command()
-@click.argument('input_path', type=click.Path(exists=True, dir_okay=False))
-@click.option('--style', default='FAST_PACED', help='Editing style to apply')
-@click.option('--platform', default='youtube', help='Target platform for rendering')
-def process(input_path: str, style: str, platform: str) -> None:
-    """Create a new processing job for *input_path*.
+STYLE_PRESETS: dict[str, dict] = {
+    "FAST_PACED": {
+        "transition_type": "random",
+        "transition_duration": 0.5,
+        "randomize_clips": True,
+        "max_clips": 10,
+        "max_clip_duration": 4.0,
+    },
+    "MONTAGE": {
+        "transition_type": "random",
+        "transition_duration": 0.4,
+        "randomize_clips": True,
+        "max_clips": 12,
+        "max_clip_duration": 2.5,
+    },
+    "CINEMATIC": {
+        "transition_type": "fade",
+        "transition_duration": 1.0,
+        "randomize_clips": False,
+    },
+    "SIMPLE": {
+        "transition_type": "none",
+        "randomize_clips": False,
+    },
+}
 
-    This is a placeholder – the full pipeline will be built in later phases.
+VERTICAL_PLATFORMS = {
+    "youtube_shorts", "shorts", "yt_shorts",
+    "instagram_reels", "instagram", "reels", "tiktok",
+}
+
+
+@cli.command()
+@click.argument('input_path', type=click.Path(exists=True, file_okay=False), metavar='CLIP_DIR')
+@click.option('--style', default='FAST_PACED', show_default=True,
+              type=click.Choice(sorted(STYLE_PRESETS), case_sensitive=False),
+              help='Editing style preset to apply')
+@click.option('--platform', default='youtube', show_default=True,
+              help='Target platform (youtube, youtube_shorts, instagram_reels, tiktok, ...)')
+@click.option('--queue-only', is_flag=True,
+              help='Only create the queued job record; do not run the pipeline now.')
+def process(input_path: str, style: str, platform: str, queue_only: bool) -> None:
+    """Create a processing job for a directory of gameplay clips and run it.
+
+    CLIP_DIR must be a folder containing .mp4/.mov/.mkv clips. The job and its
+    resolved edit options are persisted first, then the orchestrator renders
+    the final video (unless --queue-only is given).
     """
     cfg = load_config()
-    from app.storage.db import get_db
+    from app.storage.db import SessionLocal
+    from app.storage.models import Job
+
+    platform_norm = platform.strip().lower()
+    style_norm = style.upper()
+    preset = dict(STYLE_PRESETS[style_norm])
+    preset.update({
+        "style": style_norm,
+        "platform": platform_norm,
+        "aspect_ratio": "9:16" if platform_norm in VERTICAL_PLATFORMS else "16:9",
+    })
 
     log.info(
         "Starting job",
-        extra={"input": input_path, "style": style, "platform": platform},
+        extra={"input": input_path, "style": style_norm, "platform": platform_norm},
     )
-    # Minimal DB interaction – create a Job record
-    from app.storage.models import Job
-    db_gen = get_db()
-    db = next(db_gen)
-    job = Job(
-        status="queued",
-        input_path=input_path,
-        metadata=f"{{'style':'{style}','platform':'{platform}'}}",
-    )
-    db.add(job)
-    db.commit()
-    click.echo(f"Job {job.id} queued.")
-    log.info("Job queued", extra={"job_id": job.id})
+    db = SessionLocal()
+    try:
+        job = Job(
+            status="queued",
+            input_path=input_path,
+            extra_metadata=json.dumps(preset),
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+    click.echo(f"Job {job_id} queued.")
+    log.info("Job queued", extra={"job_id": job_id})
+
+    if queue_only:
+        return
+
+    from app.orchestrator.orchestrator import orchestrate_job
+
+    def _progress(icon: str, msg: str) -> None:
+        click.echo(f"{icon}  {msg}")
+
+    try:
+        output_path = orchestrate_job(job_id, progress_callback=_progress)
+    except Exception as exc:
+        log.exception("Job failed", extra={"job_id": job_id})
+        click.echo(f"Job {job_id} FAILED: {exc}", err=True)
+        sys.exit(1)
+    click.echo(f"Job {job_id} completed -> {output_path}")
+    log.info("Job completed", extra={"job_id": job_id, "output": str(output_path)})
 
 
 @cli.command()

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 from sqlalchemy import Column, DateTime, Integer, String, Text, Float
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 

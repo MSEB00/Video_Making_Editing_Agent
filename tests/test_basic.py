@@ -606,9 +606,18 @@ def test_dashboard_feedback_accepts_only_completed_edits(fresh_db, tmp_path, mon
 
 
 def test_ai_creative_mode_requires_api_key(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "")
 
     with pytest.raises(CreativeAIConfigurationError, match="OPENAI_API_KEY"):
+        ShortFormEditingModel()
+
+
+def test_ai_creative_mode_gemini_requires_api_key(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    with pytest.raises(CreativeAIConfigurationError, match="GEMINI_API_KEY"):
         ShortFormEditingModel()
 
 
