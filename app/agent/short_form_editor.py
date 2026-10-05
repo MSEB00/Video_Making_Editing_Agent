@@ -82,11 +82,30 @@ class ShortFormCreativeEditor:
             "user_selected_aspect_ratio": options.aspect_ratio,
             "chronological_assembly": chronological,
             "full_session_coverage": coverage,
+            "source_paths": [str(path) for path in input_files],
         }
 
         local_model = None
         self._active_local_model = None
         hosted_error = None
+        policy_reason = None
+        if self.model is None:
+            # Priority (spec §46): injected web-chat plan > LEARNED POLICY >
+            # measured fallback. The fallback reason must be explicit.
+            try:
+                from app.learning.policy_planner import LearnedPolicyPlanner, get_learning_state
+
+                state = get_learning_state()
+                if state in ("TRAINED", "VALIDATED", "ACTIVE"):
+                    self.model = LearnedPolicyPlanner()
+                    notify(f"Learned editing policy engaged ({self.model.model}, state={state}).")
+                else:
+                    policy_reason = (
+                        f"no trained editing policy (learning_state={state}); build one with: "
+                        "python main.py grammar-extract --from-references && python main.py train-policy"
+                    )
+            except Exception as exc:
+                policy_reason = f"policy planner unavailable ({type(exc).__name__}: {str(exc)[:120]})"
         try:
             from app.research.metadata_priors import youtube_duration_priors
             metadata_priors = youtube_duration_priors()
@@ -95,8 +114,9 @@ class ShortFormCreativeEditor:
         try:
             if self.model is None:
                 raise RemoteJSONModelError(
+                    policy_reason or
                     "No remote creative model in this context; use the web-chat paste "
-                    "workflow (plan-request + edit --plan-file) or the measured local planner."
+                    "workflow (plan-request + edit --plan-file)."
                 )
             raw_plan = self.model.create_plan(
                 media_context=media_context,
@@ -107,6 +127,7 @@ class ShortFormCreativeEditor:
                 user_request=options.creative_request,
                 user_preferences=preferences,
                 metadata_priors=metadata_priors,
+                seed=options.variation_seed,
                 available_sfx=[
                     {
                         key: item[key]
@@ -272,10 +293,27 @@ class ShortFormCreativeEditor:
 
         artifact = plan.to_dict()
         artifact["revision_count"] = revision_count
-        artifact["planning_mode"] = "local_feature_fallback" if local_model else "hosted_creative_model"
-        artifact["model_version"] = (
-            "local_feature_fallback_untrained"
-            if local_model else getattr(self.model, "model", "hosted_model")
+        if local_model:
+            artifact["planning_mode"] = "local_feature_fallback"
+            artifact["model_version"] = "local_feature_fallback_untrained"
+        elif getattr(self.model, "planning_brain", None) == "learned_policy":
+            artifact["planning_mode"] = "learned_policy"
+            artifact["model_version"] = getattr(self.model, "model", "policy")
+        else:
+            artifact["planning_mode"] = "hosted_creative_model"
+            artifact["model_version"] = getattr(self.model, "model", "hosted_model")
+        artifact["learning"] = (
+            getattr(self.model, "diagnostics", None)
+            if (not local_model and getattr(self.model, "diagnostics", None))
+            else {
+                "state": ("fallback" if local_model else "external_plan"),
+                "reason": (policy_reason or (warnings[0] if (local_model and warnings) else None)),
+                "policy_version": None,
+                "dataset_version": None,
+                "retrieved_references": [],
+                "policy_influence": 0.0,
+                "candidate_structure_count": 0,
+            }
         )
         artifact["dataset_version"] = "rights_cleared_references_v001"
         artifact["music_license"] = license_record

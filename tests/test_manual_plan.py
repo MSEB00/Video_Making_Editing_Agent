@@ -26,7 +26,7 @@ def two_clips(tmp_path):
     for i in range(2):
         subprocess.run([
             "ffmpeg", "-y",
-            "-f", "lavfi", "-i", f"testsrc2=s=320x240:r=25:d=4",
+            "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=4",
             "-f", "lavfi", "-i", f"sine=frequency={300+i*100}:duration=4",
             "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-shortest", str(clip_dir / f"clip_{i}.mp4"),

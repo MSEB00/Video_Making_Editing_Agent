@@ -115,6 +115,14 @@ def orchestrate_job(
             saved_metadata = json.loads(job.extra_metadata) if job.extra_metadata else {}
             saved_metadata["creative_edit"] = creative_artifact
             job.extra_metadata = json.dumps(saved_metadata)
+            try:
+                from app.training.reference_pipeline import ReferenceTrainingPipeline
+                ReferenceTrainingPipeline().record_trajectory(job.id, creative_artifact)
+                if creative_artifact.get("planning_mode") == "learned_policy":
+                    from app.learning.policy_model import mark_policy_used
+                    mark_policy_used(job_id=job.id)
+            except Exception as traj_exc:
+                log.warning("Trajectory recording failed: %s", traj_exc)
         else:
             render_edited_video(
                 input_files=media_files,

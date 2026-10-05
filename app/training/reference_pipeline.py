@@ -288,6 +288,42 @@ class ReferenceTrainingPipeline:
         self._append_jsonl(path, record)
         return path
 
+    def record_trajectory(self, job_id: int, artifact: dict[str, Any]) -> pathlib.Path:
+        """Persist one edit trajectory (spec §18): inputs, structures, actions,
+        critic signals and outcome — the raw material of policy improvement."""
+        learning = artifact.get("learning") or {}
+        review = artifact.get("review") or {}
+        timeline = artifact.get("timeline") or []
+        record = {
+            "job_id": int(job_id),
+            "recorded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "planning_mode": artifact.get("planning_mode"),
+            "policy_version": learning.get("policy_version"),
+            "dataset_version": learning.get("dataset_version"),
+            "learning_state": learning.get("state"),
+            "selected_structure": artifact.get("strategy"),
+            "candidate_structures": [
+                {"name": item.get("strategy"), "score": item.get("score")}
+                for item in (artifact.get("alternatives") or [])
+            ],
+            "shot_count": len(timeline),
+            "source_diversity": len({item.get("source_index") for item in timeline}),
+            "actions": {
+                "captions": len(artifact.get("captions") or []),
+                "sfx": len(artifact.get("sfx") or []),
+                "emphasis": sum(1 for item in timeline if item.get("visual_emphasis")),
+                "transitions": sum(1 for item in timeline if item.get("transition") not in (None, "cut")),
+                "music_enabled": bool((artifact.get("music_mix") or {}).get("enabled")),
+            },
+            "critic": review.get("structured") or ({"critique": str(review.get("critique"))[:200]} if review else {}),
+            "critic_score": review.get("critic_score"),
+            "failure_tags": review.get("failure_tags") or [],
+            "revision_count": artifact.get("revision_count"),
+        }
+        path = self.root / "trajectories" / "edits.jsonl"
+        self._append_jsonl(path, record)
+        return path
+
     def train_candidate(self, platforms: tuple[str, ...] = PLATFORMS[:-1]) -> dict[str, Any]:
         examples = self._read_examples()
         unique = {str(item.get("reference_id")): item for item in examples if item.get("reference_id")}
