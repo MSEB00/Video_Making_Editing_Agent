@@ -29,8 +29,8 @@ class ShortFormCreativeEditor:
         renderer: Callable[..., pathlib.Path] = render_edited_video,
     ) -> None:
         self.settings = load_config().get("creative_editing", {})
-        # Remote creative model (e.g. the dashboard's Puter.js browser bridge)
-        # is injected by callers; None => measured local feature planner.
+        # Remote creative model (e.g. ManualPlanModel for the web-chat paste
+        # workflow) is injected by callers; None => measured local planner.
         self.model = model
         self.music = music_provider or JamendoMusicProvider()
         examples_path = pathlib.Path(self.settings.get("learned_examples_path", "data/editing_examples.jsonl"))
@@ -95,8 +95,8 @@ class ShortFormCreativeEditor:
         try:
             if self.model is None:
                 raise RemoteJSONModelError(
-                    "No remote creative model in this context; the dashboard provides "
-                    "Puter.js AI and the CLI uses the measured local planner."
+                    "No remote creative model in this context; use the web-chat paste "
+                    "workflow (plan-request + edit --plan-file) or the measured local planner."
                 )
             raw_plan = self.model.create_plan(
                 media_context=media_context,

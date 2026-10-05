@@ -6,9 +6,9 @@ review_render / revise_plan) on top of an injected ``call`` transport:
     call(system: str, payload: dict, frames: list, max_tokens: int) -> str
 
 The transport returns the model's raw text; parsing lives here (tolerant of
-code fences and prose). Today's transport is the dashboard's Puter.js browser
-bridge (free, keyless, user-signed-in Qwen models); the CLI without a browser
-simply uses the local feature planner instead. No provider SDKs, no API keys.
+code fences and prose). The shipped transport is the web-chat paste workflow
+(ManualPlanModel via `edit --plan-file`); runs without any model use the
+measured local feature planner. No provider SDKs, no API keys.
 """
 from __future__ import annotations
 

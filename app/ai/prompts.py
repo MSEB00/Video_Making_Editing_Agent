@@ -1,8 +1,8 @@
 """Creative-model prompts and tolerant JSON parsing.
 
-Shared by any remote creative model transport (the dashboard's Puter.js
-browser bridge today; other key-free backends tomorrow). Prompts are plain
-data — no provider SDKs live here.
+Shared by every creative-model transport (the web-chat paste workflow
+today; any future key-free backend tomorrow). Prompts are plain data —
+no provider SDKs live here.
 """
 from __future__ import annotations
 

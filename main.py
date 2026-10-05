@@ -39,7 +39,7 @@ def cli() -> None:
               help='Sample frames exported as images (attach them to the chat for vision planning).')
 def plan_request(input_path: str, platform: str, game: str, request: str,
                  target_duration: int, max_frames: int) -> None:
-    """Export the creative-planning prompt for a WEB CHAT AI (e.g. ChatGPT).
+    """Export the creative-planning prompt for a WEB CHAT AI (chat.qwen.ai, ChatGPT, ...).
 
     Analyzes the clip folder exactly like the agent would (media facts, kill
     events, learned style profile, SFX inventory, YouTube metadata priors),
@@ -167,7 +167,7 @@ def plan_request(input_path: str, platform: str, game: str, request: str,
         "style_profile_status": style_profile.get("training_status"),
         "instructions": [
             f"1. Copy the whole contents of {request_path}",
-            "2. Paste into ChatGPT web (attach the frame images too, if you can)",
+            "2. Paste into any web chat AI — chat.qwen.ai or ChatGPT (attach the frame images too, if you can)",
             f"3. Save the AI's full reply as {response_path}",
             f"4. python main.py edit \"{input_path}\" --plan-file \"{response_path}\" "
             f"--platform {platform} --duration {target_duration}",
@@ -359,9 +359,9 @@ def edit(input_path: str, platform: str, game: str, request: str, target_duratio
          shot_order: str, source_clips: str, plan_file: str | None) -> None:
     """Run the full CREATIVE pipeline: AI plan → render → review → revise.
 
-    Planning brains, in order of preference: --plan-file (any web chat AI,
-    e.g. ChatGPT — see the plan-request command), the dashboard's Puter.js
-    browser model, or the measured local feature planner (CLI default). Produces output/job_N_final.mp4 plus an .edit-plan.json
+    Planning brains, in order of preference: --plan-file (any web chat AI —
+    chat.qwen.ai, ChatGPT; see the plan-request command) or the measured
+    local feature planner (default). Produces output/job_N_final.mp4 plus an .edit-plan.json
     artifact with full decision provenance.
     """
     from app.storage.db import SessionLocal

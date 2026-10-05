@@ -12,8 +12,8 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
                                               │
                           ┌───────────────────┼────────────────────────┐
                           │  classic mode     │  creative mode         │
-                          │  style presets    │  AI plan (Puter.js     │
-                          │  transitions      │  Qwen, in-browser)     │
+                          │  style presets    │  AI plan (web chat:    │
+                          │  transitions      │  qwen.ai / ChatGPT)    │
                           │  BGM + SFX mix    │  Jamendo music search  │
                           │  color grade      │  learned style profile │
                           │  16:9 / 9:16      │  captions + emphasis   │
@@ -50,12 +50,12 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
 - **Aspect-ratio targeting** — 16:9 (YouTube) and 9:16 (Shorts/Reels/
   TikTok) with crop-first vertical reframing (no upscale-then-crop waste)
   and optional punch-zoom emphasis.
-- **AI creative mode (free, keyless)** — the dashboard runs creative
-  planning through **Puter.js in your browser** (Qwen models by default,
-  "user-pays", no API keys): the planner analyses low-res frames + media
-  facts and produces a shot list, captions, emphasis, transition plan and
-  music direction; a render-critique loop allows configurable revisions.
-  The CLI (no browser) uses the measured local feature planner.
+- **AI creative mode (free, keyless, paste workflow)** — `plan-request`
+  exports the exact planning prompt (media facts, kill events, style
+  profile, frame images); paste it into **chat.qwen.ai or ChatGPT web**,
+  save the reply, and `edit --plan-file` runs it through the full protected
+  pipeline. Without a plan file, the measured local feature planner runs.
+  No API keys, no provider SDKs, no website automation anywhere.
 - **Automatic online learning (legal)** — `collect-references` downloads
   edited short-form clips (<=180 s duration gate) from two licensed
   providers: **Pexels** (license permits download+reuse; free API key) and
@@ -135,14 +135,13 @@ python main.py process input\my_session --queue-only
 
 # Full CREATIVE pipeline: plan → render → review → revise.
 # Planning brains (pick one):
-#   a) Dashboard chat  — free Puter.js Qwen in your browser (no keys)
-#   b) ChatGPT web paste workflow (no keys, no automation of any website):
+#   a) Web-chat paste workflow (chat.qwen.ai / ChatGPT — no keys, no automation):
 python main.py plan-request input\my_session --duration 40 --request "kill montage in match order"
 #      → copy temp\ai\request_*.txt into ChatGPT web (attach the exported
 #        frame images for vision planning), save the reply to the printed
 #        response file, then:
 python main.py edit input\my_session --plan-file temp\ai\response_XXXX.txt --duration 40
-#   c) CLI default — measured local feature planner (no AI at all)
+#   b) CLI default — measured local feature planner (no AI at all)
 # Writes output\job_N_final.mp4 plus an .edit-plan.json artifact with full
 # decision provenance.
 python main.py edit input\my_session --platform youtube_shorts --duration 30 --request "fast montage, punchy hook"
@@ -240,7 +239,7 @@ app/
   agent/short_form_editor.py    creative-mode end-to-end agent
   ai/prompts.py                 creative-model prompts + tolerant JSON parsing
   ai/remote_json_model.py       transport-agnostic remote creative model
-                                (dashboard Puter.js bridge today)
+  ai/manual_plan_model.py       web-chat paste workflow model (plan files)
   ai/local_editing.py           offline heuristics (no-API fallback)
   analysis/media_context.py     ffprobe facts + low-res frames for the AI
   audio/bgm_manager.py          BGM library (user assets + Jamendo)
@@ -258,8 +257,6 @@ app/
   utilities/                    ffmpeg wrapper, logger, files, hardware probe
 config/                     YAML configuration
 dashboard/                  Flask + SocketIO chat dashboard & research UI
-  puter_bridge.py               SocketIO → browser Puter.js AI transport
-  static/puter_ai.js            client-side Puter call handler
 training/                   dataset build/analyze/train scripts + data
 assets/bgm, assets/sfx      audio assets (user-managed / generated)
 tests/                      pytest suite (45 tests)

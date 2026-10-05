@@ -159,7 +159,7 @@ def test_truncated_remote_response_raises_with_snippet():
         calls.append(kwargs)
         return '{ "track_id": "20'  # job-86 style truncation
 
-    model = RemoteJSONModel(call=call, model_name="puter:qwen")
+    model = RemoteJSONModel(call=call, model_name="web-chat")
     with pytest.raises(RemoteJSONModelError, match="unparseable JSON"):
         model.rank_music({}, {"music_requirements": {}}, [])
     assert calls and calls[0]["max_tokens"] == 1400

@@ -2,7 +2,7 @@
 
 The dashboard's `/research` page and `python main.py research --topic "gaming Shorts" --limit 5` use the official YouTube Data API to discover public metadata, then the official IFrame Player API for user-controlled viewing. By default, the UI is preview-only: it does not persist player timing, notes, or session observations, and it does not download, cache, extract, or analyze audiovisual streams.
 
-Creative planning, music ranking, review, and revision run through **Puter.js in the dashboard browser** (free, keyless, user-pays; default model `qwen/qwen3.7-plus`, override with `PUTER_MODEL` in `.env`). No provider API keys exist in this project. The CLI has no browser and uses the measured local feature planner. Direct YouTube-URL video understanding is not used anywhere; the creative editor only ever sends low-resolution frame samples of your own footage to the model.
+Creative planning runs through the **web-chat paste workflow**: `python main.py plan-request` exports the prompt (media facts, kill events, style profile, frame images); paste it into chat.qwen.ai or ChatGPT web, save the reply, and `python main.py edit --plan-file <reply>` executes it. Music ranking and render review use the measured local model. No provider API keys exist in this project. Direct YouTube-URL video understanding is not used anywhere; only low-resolution frame samples of your own footage ever leave the machine (inside text/images you paste yourself).
 
 Files in this directory:
 
