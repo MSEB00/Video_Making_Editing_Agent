@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "MaxwellWomack",
+  "page_url": "https://archive.org/details/MaxwellWomack",
+  "download_url": "https://archive.org/download/MaxwellWomack/IMG_0236.mp4",
+  "duration_seconds": 88.56,
+  "uploader": "MaxwellWomack",
+  "uploader_id": "MaxwellWomack",
+  "query": "call of duty montage",
+  "license_name": "Public Domain / CC0",
+  "license_url": "http://creativecommons.org/publicdomain/mark/1.0/",
+  "rights_basis": "public_domain",
+  "attribution_required": false,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_MaxwellWomack.mp4",
+  "acquired_at": "2026-10-05T05:06:30.317355+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "youtube-6jInecK4QjY",
+  "page_url": "https://archive.org/details/youtube-6jInecK4QjY",
+  "download_url": "https://archive.org/download/youtube-6jInecK4QjY/6jInecK4QjY.mp4",
+  "duration_seconds": 18.96,
+  "uploader": "Epic Babu",
+  "uploader_id": "Epic Babu",
+  "query": "valorant gameplay",
+  "license_name": "Creative Commons (see license_url)",
+  "license_url": "https://creativecommons.org/licenses/by/3.0/",
+  "rights_basis": "licensed",
+  "attribution_required": true,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_youtube-6jInecK4QjY.mp4",
+  "acquired_at": "2026-10-05T04:43:44.185881+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

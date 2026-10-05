@@ -1,9 +1,9 @@
 {
   "dataset_name": "human_authored_short_form_research",
   "dataset_version": "v001",
-  "updated_at": "2026-10-01T10:49:51.272020+00:00",
-  "video_count": 15,
-  "session_count": 1,
+  "updated_at": "2026-10-04T18:14:58.979287+00:00",
+  "video_count": 383,
+  "session_count": 4,
   "observation_count": 0,
   "youtube_media_captured": false,
   "youtube_observations_training_eligible": false

@@ -1,0 +1,47 @@
+{
+  "cached_at": 1791180964.99943,
+  "data": {
+    "id": "2311469",
+    "title": "Breathe (Other Wybie)",
+    "artist": "Carmine Rendina",
+    "duration": 255.0,
+    "audio_url": "https://prod-1.storage.jamendo.com/?trackid=2311469&format=mp32&from=HyDv5Cc515gDaLNoG0jhZQ%3D%3D%7CeF6qcvOxWVOAZT1rtOW5JA%3D%3D",
+    "download_url": "https://prod-1.storage.jamendo.com/download/track/2311469/mp32/",
+    "download_allowed": true,
+    "license_url": "http://creativecommons.org/licenses/by/3.0/",
+    "license_type": null,
+    "attribution_required": true,
+    "source_url": "https://www.jamendo.com/track/2311469",
+    "musicinfo": {
+      "vocalinstrumental": "instrumental",
+      "lang": "",
+      "gender": "",
+      "acousticelectric": "electric",
+      "speed": "high",
+      "tags": {
+        "genres": [
+          "rock",
+          "acidhouse"
+        ],
+        "instruments": [
+          "bass",
+          "bandoneon"
+        ],
+        "vartags": [
+          "happy"
+        ]
+      }
+    },
+    "stats": {
+      "rate_downloads_total": 10,
+      "rate_listened_total": 83,
+      "playlisted": 0,
+      "favorited": 0,
+      "likes": 0,
+      "dislikes": 0,
+      "avgnote": 4,
+      "notes": 1
+    },
+    "audio_features": {}
+  }
+}

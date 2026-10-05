@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "Montage1-MaliciousGaming",
+  "page_url": "https://archive.org/details/Montage1-MaliciousGaming",
+  "download_url": "https://archive.org/download/Montage1-MaliciousGaming/_YouTube_-_gotpaint17_s_Channel__512kb.mp4",
+  "duration_seconds": 83.02,
+  "uploader": "brandon kelley",
+  "uploader_id": "brandon kelley",
+  "query": "gaming montage",
+  "license_name": "Public Domain / CC0",
+  "license_url": "http://creativecommons.org/licenses/publicdomain/",
+  "rights_basis": "public_domain",
+  "attribution_required": false,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_Montage1-MaliciousGaming.mp4",
+  "acquired_at": "2026-10-05T04:43:50.787048+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

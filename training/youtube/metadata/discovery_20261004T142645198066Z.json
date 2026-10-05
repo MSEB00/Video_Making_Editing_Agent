@@ -1,0 +1,59 @@
+{
+  "discovered_at": "2026-10-04T14:26:45.198066+00:00",
+  "expires_at": "2026-11-03T14:26:45.198066+00:00",
+  "published_after": "2026-07-06T14:26:44.531948+00:00",
+  "order": "viewCount",
+  "queries": [
+    "valorant clutch shorts"
+  ],
+  "results": [
+    {
+      "platform": "youtube",
+      "video_id": "czV9EeO2hAE",
+      "url": "https://www.youtube.com/watch?v=czV9EeO2hAE",
+      "title": "SHXRK NEVER FAILS TO AMAZE \ud83d\udc80 #shxrk #fortnite #shorts #0ping #epicpartner",
+      "channel": "OG Clips",
+      "channel_id": "UCI2p88Fw5iy1Fhp4JD2qhgQ",
+      "description": "CREDIT: https://www.twitch.tv/shxrkfnbr Use code \"OGClipsFBR\" as your Support a Creator in the Item Shop! Road to 100000 ...",
+      "published_at": "2026-08-04T17:00:16Z",
+      "duration_seconds": 18.0,
+      "category_id": "20",
+      "license": "creativeCommon",
+      "license_filter": "creativeCommon",
+      "view_count": 40074,
+      "like_count": 641,
+      "comment_count": 11,
+      "thumbnail_url": "https://i.ytimg.com/vi/czV9EeO2hAE/hqdefault.jpg",
+      "discovery_queries": [
+        "valorant clutch shorts"
+      ],
+      "discovery_mode": "trending",
+      "discovered_at": "2026-10-04T14:26:44.531968+00:00",
+      "media_downloaded": false
+    },
+    {
+      "platform": "youtube",
+      "video_id": "UfjMhYJt6VU",
+      "url": "https://www.youtube.com/watch?v=UfjMhYJt6VU",
+      "title": "The WORST way to lose an ace... #shorts",
+      "channel": "TylerJedi",
+      "channel_id": "UCsANLy0T7rmzNsXmYg_RYlw",
+      "description": "Have you ever seen an ace get stolen like this? Have you seen an ace stolen in a worse way? Be sure to leave a like & subscribe ...",
+      "published_at": "2026-09-29T16:00:12Z",
+      "duration_seconds": 20.0,
+      "category_id": "20",
+      "license": "creativeCommon",
+      "license_filter": "creativeCommon",
+      "view_count": 33176,
+      "like_count": 562,
+      "comment_count": 14,
+      "thumbnail_url": "https://i.ytimg.com/vi/UfjMhYJt6VU/hqdefault.jpg",
+      "discovery_queries": [
+        "valorant clutch shorts"
+      ],
+      "discovery_mode": "trending",
+      "discovered_at": "2026-10-04T14:26:44.531968+00:00",
+      "media_downloaded": false
+    }
+  ]
+}

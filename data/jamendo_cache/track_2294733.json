@@ -1,0 +1,45 @@
+{
+  "cached_at": 1791180965.0006802,
+  "data": {
+    "id": "2294733",
+    "title": "Dirty Dicks",
+    "artist": "Carmine Rendina",
+    "duration": 366.0,
+    "audio_url": "https://prod-1.storage.jamendo.com/?trackid=2294733&format=mp32&from=ND9XtUNE1pY28Fn5uGARyg%3D%3D%7CYth%2FOD447g0Q1jLfgOgg2Q%3D%3D",
+    "download_url": "https://prod-1.storage.jamendo.com/download/track/2294733/mp32/",
+    "download_allowed": true,
+    "license_url": "http://creativecommons.org/licenses/by/3.0/",
+    "license_type": null,
+    "attribution_required": true,
+    "source_url": "https://www.jamendo.com/track/2294733",
+    "musicinfo": {
+      "vocalinstrumental": "instrumental",
+      "lang": "",
+      "gender": "",
+      "acousticelectric": "electric",
+      "speed": "medium",
+      "tags": {
+        "genres": [
+          "hiphop"
+        ],
+        "instruments": [
+          "computer"
+        ],
+        "vartags": [
+          "neutral"
+        ]
+      }
+    },
+    "stats": {
+      "rate_downloads_total": 16,
+      "rate_listened_total": 158,
+      "playlisted": 0,
+      "favorited": 0,
+      "likes": 0,
+      "dislikes": 0,
+      "avgnote": 4,
+      "notes": 1
+    },
+    "audio_features": {}
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "how-2-montage-ancient-reality-reupload",
+  "page_url": "https://archive.org/details/how-2-montage-ancient-reality-reupload",
+  "download_url": "https://archive.org/download/how-2-montage-ancient-reality-reupload/how 2 montage (AncientReality reupload).mp4",
+  "duration_seconds": 125.88,
+  "uploader": "Ancient Reality",
+  "uploader_id": "Ancient Reality",
+  "query": "mlg montage",
+  "license_name": "Creative Commons (see license_url)",
+  "license_url": "https://creativecommons.org/licenses/by-nd/4.0/",
+  "rights_basis": "licensed",
+  "attribution_required": true,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_how-2-montage-ancient-reality-reupload.mp4",
+  "acquired_at": "2026-10-05T05:23:41.783114+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

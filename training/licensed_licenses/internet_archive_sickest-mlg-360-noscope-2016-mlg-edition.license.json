@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "sickest-mlg-360-noscope-2016-mlg-edition",
+  "page_url": "https://archive.org/details/sickest-mlg-360-noscope-2016-mlg-edition",
+  "download_url": "https://archive.org/download/sickest-mlg-360-noscope-2016-mlg-edition/SICKEST MLG 360 NOSCOPE 2016 [MLG EDITION].ia.mp4",
+  "duration_seconds": 28.0,
+  "uploader": "Wizzy Bang",
+  "uploader_id": "Wizzy Bang",
+  "query": "mlg montage",
+  "license_name": "Creative Commons (see license_url)",
+  "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+  "rights_basis": "licensed",
+  "attribution_required": true,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_sickest-mlg-360-noscope-2016-mlg-edition.mp4",
+  "acquired_at": "2026-10-05T05:23:44.910086+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

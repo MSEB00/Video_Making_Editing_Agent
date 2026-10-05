@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "call-of-duty-tournament-PHiZZURP-collection",
+  "page_url": "https://archive.org/details/call-of-duty-tournament-PHiZZURP-collection",
+  "download_url": "https://archive.org/download/call-of-duty-tournament-PHiZZURP-collection/38 - 3v3 Mw2 ProMod Tournament.mp4",
+  "duration_seconds": 73.1,
+  "uploader": "call-of-duty-tournament-PHiZZURP-collection",
+  "uploader_id": "call-of-duty-tournament-PHiZZURP-collection",
+  "query": "call of duty montage",
+  "license_name": "Creative Commons (see license_url)",
+  "license_url": "https://creativecommons.org/licenses/by-nc-nd/4.0/",
+  "rights_basis": "licensed",
+  "attribution_required": true,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_call-of-duty-tournament-PHiZZURP-collection.mp4",
+  "acquired_at": "2026-10-05T05:06:21.219469+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

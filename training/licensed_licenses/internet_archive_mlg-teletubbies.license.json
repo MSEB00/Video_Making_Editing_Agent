@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "mlg-teletubbies",
+  "page_url": "https://archive.org/details/mlg-teletubbies",
+  "download_url": "https://archive.org/download/mlg-teletubbies/mlg teletubbies.mp4",
+  "duration_seconds": 116.89,
+  "uploader": "Pyrocynical, The Leni loving Critic",
+  "uploader_id": "Pyrocynical, The Leni loving Critic",
+  "query": "mlg montage",
+  "license_name": "Creative Commons (see license_url)",
+  "license_url": "https://creativecommons.org/licenses/by-nd/4.0/",
+  "rights_basis": "licensed",
+  "attribution_required": true,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_mlg-teletubbies.mp4",
+  "acquired_at": "2026-10-05T05:17:28.061013+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

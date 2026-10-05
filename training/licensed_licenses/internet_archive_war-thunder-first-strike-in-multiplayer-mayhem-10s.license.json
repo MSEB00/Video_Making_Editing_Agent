@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "war-thunder-first-strike-in-multiplayer-mayhem-10s",
+  "page_url": "https://archive.org/details/war-thunder-first-strike-in-multiplayer-mayhem-10s",
+  "download_url": "https://archive.org/download/war-thunder-first-strike-in-multiplayer-mayhem-10s/\ud83c\udfaeWar Thunder First Strike in Multiplayer Mayhem!\ud83d\udd25 10s.ia.mp4",
+  "duration_seconds": 10.54,
+  "uploader": "zukicafe",
+  "uploader_id": "zukicafe",
+  "query": "gaming montage",
+  "license_name": "Public Domain / CC0",
+  "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+  "rights_basis": "public_domain",
+  "attribution_required": false,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_war-thunder-first-strike-in-multiplayer-mayhem-10s.mp4",
+  "acquired_at": "2026-10-05T04:43:47.276648+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

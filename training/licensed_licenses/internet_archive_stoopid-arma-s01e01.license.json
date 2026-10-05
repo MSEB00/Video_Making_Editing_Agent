@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "stoopid-arma-s01e01",
+  "page_url": "https://archive.org/details/stoopid-arma-s01e01",
+  "download_url": "https://archive.org/download/stoopid-arma-s01e01/01 - Stoopid Arma - Aller Anfang ist schwer.ia.mp4",
+  "duration_seconds": 160.94,
+  "uploader": "Unkn0wnCat",
+  "uploader_id": "Unkn0wnCat",
+  "query": "gaming montage",
+  "license_name": "Creative Commons (see license_url)",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "rights_basis": "licensed",
+  "attribution_required": true,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_stoopid-arma-s01e01.mp4",
+  "acquired_at": "2026-10-04T18:14:53.293144+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}

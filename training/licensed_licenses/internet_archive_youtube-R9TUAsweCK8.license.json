@@ -1,0 +1,18 @@
+{
+  "provider": "internet_archive",
+  "video_id": "youtube-R9TUAsweCK8",
+  "page_url": "https://archive.org/details/youtube-R9TUAsweCK8",
+  "download_url": "https://archive.org/download/youtube-R9TUAsweCK8/R9TUAsweCK8.mp4",
+  "duration_seconds": 41.63,
+  "uploader": "BerdyGames",
+  "uploader_id": "BerdyGames",
+  "query": "gaming montage",
+  "license_name": "Creative Commons (see license_url)",
+  "license_url": "https://creativecommons.org/licenses/by/3.0/",
+  "rights_basis": "licensed",
+  "attribution_required": true,
+  "local_file": "D:\\gaming_video_agent\\training\\licensed_inbox\\internet_archive_youtube-R9TUAsweCK8.mp4",
+  "acquired_at": "2026-10-05T04:43:59.535520+00:00",
+  "acquisition": "official_provider_api_download",
+  "media_from_youtube_or_instagram": false
+}
