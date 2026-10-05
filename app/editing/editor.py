@@ -62,6 +62,7 @@ class EditOptions:
     sfx_clips: Optional[List[tuple[pathlib.Path, float, float]]] = None
     audio_normalization_target_lufs: float = -16.0
     planned_audio_gains_db: Optional[List[float]] = None
+    chronological_order: Optional[bool] = None   # None = use creative_editing.chronological_shot_order
 
 
 def _select_source_clips(input_files: List[pathlib.Path], options: EditOptions, rng: random.Random) -> List[pathlib.Path]:

@@ -12,6 +12,11 @@ creative_editing:
   max_revision_passes: 1
   # Align planned shots to detected gameplay events (e.g. VALORANT kills):
   # buildup before, event as payoff near shot end, hold after, never cut mid-event.
+  # Assemble shots in recording chronology (source order, then position within
+  # source) so the match story stays consistent for viewers. The planner still
+  # SELECTS moments freely; only the ordering is normalized. Set false (or use
+  # `edit --order impact`) to keep planner-chosen cold-open ordering.
+  chronological_shot_order: true
   align_to_gameplay_events: true
   event_hold_seconds: 1.0
   event_max_snap_shift_seconds: 6.0

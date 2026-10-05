@@ -28,6 +28,11 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
   bounded-memory audio crossfade mixdown, color grading, title/caption
   overlays, SFX hits, BGM mixing with ducking, loudness normalization
   (creative mode), NVENC hardware encoding with automatic CPU fallback.
+- **Chronological assembly (default)** — shots are reassembled in recording
+  order (capture filenames sort by record time), keeping the match narrative
+  consistent for viewers; the planner still selects moments freely. Disable
+  per-run with `--order impact` or globally via
+  `creative_editing.chronological_shot_order`.
 - **Gameplay-event alignment** — a kill-feed detector (FFmpeg region
   sampling + Pillow statistics, no extra dependencies) finds timestamped
   eliminations in VALORANT footage; both the hosted AI planner (events are
@@ -107,6 +112,10 @@ python main.py process input\my_session --style FAST_PACED --platform youtube
 
 # Vertical Short with the montage preset
 python main.py process input\my_session --style MONTAGE --platform youtube_shorts
+
+# Creative edit with planner-chosen (impact) ordering instead of the default
+# recording-chronology assembly:
+python main.py edit input\my_session --order impact
 
 # Only create the queued job record, run later from the dashboard
 python main.py process input\my_session --queue-only

@@ -68,12 +68,18 @@ class ShortFormCreativeEditor:
         events_by_source = self._detect_gameplay_events(input_files, media_context, options, notify)
         style_profile = self.style_learner.learn(platform)
         sfx_assets = self.sfx_library.list_assets()
+        chronological = (
+            bool(self.settings.get("chronological_shot_order", True))
+            if options.chronological_order is None
+            else bool(options.chronological_order)
+        )
         preferences = {
             "game": options.game or self.settings.get("default_game", "valorant"),
             "requested_style": options.creative_request,
             "music_preference": options.bgm_track,
             "sfx_preference": options.sfx_preference,
             "user_selected_aspect_ratio": options.aspect_ratio,
+            "chronological_assembly": chronological,
         }
 
         local_model = None
@@ -125,6 +131,8 @@ class ShortFormCreativeEditor:
         plan = EditPlan.from_dict(raw_plan, len(media_context["sources"]), max_shots)
         self._validate_source_ranges(plan, media_context["sources"], target_duration)
         alignment = self._align_plan_to_events(plan, events_by_source, media_context["sources"])
+        if chronological:
+            self._apply_chronological_order(plan)
         warnings: list[str] = []
         if hosted_error:
             warnings.append(
@@ -202,6 +210,8 @@ class ShortFormCreativeEditor:
                     )
                     break
                 alignment = self._align_plan_to_events(revised, events_by_source, media_context["sources"]) or alignment
+                if chronological:
+                    self._apply_chronological_order(revised)
                 if revised.music_requirements != plan.music_requirements:
                     candidate_tracks = self._search_music(revised, warnings)
                     selected_track, license_record = self._select_music(
@@ -258,6 +268,7 @@ class ShortFormCreativeEditor:
         artifact["dataset_version"] = "rights_cleared_references_v001"
         artifact["music_license"] = license_record
         artifact["warnings"] = warnings
+        artifact["shot_order"] = "chronological" if chronological else "planner"
         if metadata_priors:
             artifact["youtube_metadata_priors"] = metadata_priors
         artifact["gameplay_events"] = {
@@ -689,6 +700,23 @@ class ShortFormCreativeEditor:
                 extra={"aligned_shots": len(alignment)},
             )
         return alignment
+
+    @staticmethod
+    def _apply_chronological_order(plan: EditPlan) -> bool:
+        """Reorder shots into recording chronology.
+
+        Source order is capture order (the orchestrator sorts session files by
+        name, and capture filenames embed record timestamps), then position
+        within each source. Selection, trimming, captions, transitions and
+        kill alignment are preserved — only the assembly order changes, so the
+        match story stays consistent for viewers. Returns True if reordered.
+        """
+        ordered = sorted(plan.shots, key=lambda shot: (shot.source_index, shot.start))
+        changed = ordered != plan.shots
+        plan.shots = ordered
+        if changed:
+            log.info("Reassembled %d shot(s) into recording chronology", len(ordered))
+        return changed
 
     @staticmethod
     def _public_track(track: dict[str, Any]) -> dict[str, Any]:

@@ -1,8 +1,21 @@
 """Robustness tests: LLM JSON salvage, seeded fallback variation, BGM retention."""
 import json
 import pathlib
+import tempfile
+from click.testing import CliRunner
 
 import pytest
+
+
+@pytest.fixture()
+def fresh_db(monkeypatch):
+    from app.storage.db import init_db, reset_engine
+    db_path = pathlib.Path(tempfile.mkdtemp()) / "cli.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    reset_engine()
+    init_db()
+    yield db_path
+    reset_engine()
 
 from app.ai.creative_editor import ShortFormEditingModel, _parse_json_object
 from app.ai.local_editing import LocalShortFormEditingModel
@@ -289,3 +302,117 @@ def test_review_failure_ships_render_with_warning(tmp_path, monkeypatch):
     assert len(renders) == 1
     assert artifact["revision_count"] == 0
     assert any("Render review failed" in w for w in artifact["warnings"])
+
+
+# ── Chronological shot assembly (recorded-timeline consistency) ──────────────
+
+def test_apply_chronological_order_sorts_by_source_then_position():
+    from app.editing.edit_plan import EditPlan
+
+    plan = EditPlan.from_dict({
+        "platform": "youtube_shorts", "strategy": "s", "target_duration": 20,
+        "shots": [
+            {"source_index": 2, "start": 0, "end": 3},
+            {"source_index": 0, "start": 5, "end": 8},
+            {"source_index": 1, "start": 0, "end": 2},
+            {"source_index": 0, "start": 1, "end": 4},
+        ],
+    }, source_count=3)
+    changed = ShortFormCreativeEditor._apply_chronological_order(plan)
+    assert changed is True
+    assert [(s.source_index, s.start) for s in plan.shots] == [(0, 1.0), (0, 5.0), (1, 0.0), (2, 0.0)]
+    # second call is a no-op
+    assert ShortFormCreativeEditor._apply_chronological_order(plan) is False
+
+
+def _chron_run(tmp_path, monkeypatch, chronological_option, plan_shots):
+    monkeypatch.setenv("CREATIVE_REVIEW_RENDER", "false")
+    sources_meta = [
+        {"source_index": i, "filename": f"c{i}.mp4", "duration": 10,
+         "width": 1920, "height": 1080, "has_audio": True, "audio_mean_db": -25}
+        for i in range(3)
+    ]
+    src = tmp_path / "clips"
+    src.mkdir(exist_ok=True)
+    files = []
+    for i in range(3):
+        f = src / f"c{i}.mp4"
+        f.write_bytes(b"x")
+        files.append(f)
+
+    class Model:
+        def create_plan(self, **kwargs):
+            assert "chronological_assembly" in kwargs["user_preferences"]
+            return {
+                "platform": "youtube_shorts", "strategy": "s", "target_duration": 20,
+                "shots": plan_shots, "music_requirements": {}, "sound_design": [],
+            }
+
+    def analyze(paths, max_sources=12):
+        return {"sources": [dict(m) for m in sources_meta[:len(paths)]]}, []
+
+    def render(inputs, destination, options, callback):
+        pathlib.Path(destination).write_bytes(b"rendered")
+        return pathlib.Path(destination)
+
+    monkeypatch.setattr(editor_module, "analyze_sources", analyze)
+    editor = ShortFormCreativeEditor(
+        model=Model(),
+        music_provider=type("Music", (), {"client_id": ""})(),
+        style_learner=type("Style", (), {"learn": lambda self, platform: {}})(),
+        sfx_library=type("Sfx", (), {"list_assets": lambda self: []})(),
+        renderer=render,
+    )
+    return editor.create_edit(
+        files, tmp_path / "out.mp4",
+        EditOptions(creative_mode=True, platform="youtube_shorts", aspect_ratio="9:16",
+                    target_duration=20, bgm_track=None, game="none",
+                    chronological_order=chronological_option),
+    )
+
+
+SHUFFLED = [
+    {"source_index": 2, "start": 0, "end": 3, "role": "hook", "transition": "cut"},
+    {"source_index": 0, "start": 1, "end": 4, "role": "action", "transition": "cut"},
+    {"source_index": 1, "start": 0, "end": 2, "role": "payoff", "transition": "cut"},
+]
+
+
+def test_default_assembly_is_chronological(tmp_path, monkeypatch):
+    artifact = _chron_run(tmp_path, monkeypatch, None, SHUFFLED)
+    assert artifact["shot_order"] == "chronological"
+    assert artifact["clip_order"] == [0, 1, 2]
+
+
+def test_impact_order_preserves_planner_sequence(tmp_path, monkeypatch):
+    artifact = _chron_run(tmp_path, monkeypatch, False, SHUFFLED)
+    assert artifact["shot_order"] == "planner"
+    assert artifact["clip_order"] == [2, 0, 1]
+
+
+def test_cli_edit_order_flag_maps_to_options(tmp_path, monkeypatch, fresh_db):
+    import main as main_module
+    from app.orchestrator import orchestrator as orchestrator_module
+
+    clip_dir = tmp_path / "clips"
+    clip_dir.mkdir(exist_ok=True)
+    (clip_dir / "a.mp4").write_bytes(b"clip")
+    captured = {}
+
+    def fake_orchestrate(job_id, options=None, progress_callback=None):
+        captured["options"] = options
+        out = tmp_path / f"job_{job_id}_final.mp4"
+        out.write_bytes(b"r")
+        return out
+
+    monkeypatch.setattr(orchestrator_module, "orchestrate_job", fake_orchestrate)
+    runner = CliRunner()
+    r1 = runner.invoke(main_module.cli, ["edit", str(clip_dir), "--order", "impact"])
+    assert r1.exit_code == 0, r1.output
+    assert captured["options"].chronological_order is False
+    r2 = runner.invoke(main_module.cli, ["edit", str(clip_dir), "--order", "chronological"])
+    assert r2.exit_code == 0, r2.output
+    assert captured["options"].chronological_order is True
+    r3 = runner.invoke(main_module.cli, ["edit", str(clip_dir)])
+    assert r3.exit_code == 0, r3.output
+    assert captured["options"].chronological_order is None  # auto → config decides
