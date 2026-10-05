@@ -6,7 +6,7 @@ import os
 import pathlib
 from typing import Any, Callable, Optional
 
-from app.ai.creative_editor import CreativeAIConfigurationError, ShortFormEditingModel
+from app.ai.remote_json_model import RemoteJSONModelError
 from app.analysis.media_context import analyze_sources
 from app.audio.jamendo_provider import JamendoMusicProvider, MusicRequirements
 from app.audio.sfx_library import SfxLibrary
@@ -29,13 +29,9 @@ class ShortFormCreativeEditor:
         renderer: Callable[..., pathlib.Path] = render_edited_video,
     ) -> None:
         self.settings = load_config().get("creative_editing", {})
+        # Remote creative model (e.g. the dashboard's Puter.js browser bridge)
+        # is injected by callers; None => measured local feature planner.
         self.model = model
-        self.model_configuration_error: Optional[CreativeAIConfigurationError] = None
-        if self.model is None:
-            try:
-                self.model = ShortFormEditingModel()
-            except CreativeAIConfigurationError as exc:
-                self.model_configuration_error = exc
         self.music = music_provider or JamendoMusicProvider()
         examples_path = pathlib.Path(self.settings.get("learned_examples_path", "data/editing_examples.jsonl"))
         if not examples_path.is_absolute():
@@ -98,8 +94,9 @@ class ShortFormCreativeEditor:
             metadata_priors = {}
         try:
             if self.model is None:
-                raise self.model_configuration_error or CreativeAIConfigurationError(
-                    "No creative model provider is configured."
+                raise RemoteJSONModelError(
+                    "No remote creative model in this context; the dashboard provides "
+                    "Puter.js AI and the CLI uses the measured local planner."
                 )
             raw_plan = self.model.create_plan(
                 media_context=media_context,

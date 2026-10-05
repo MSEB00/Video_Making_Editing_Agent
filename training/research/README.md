@@ -2,7 +2,7 @@
 
 The dashboard's `/research` page and `python main.py research --topic "gaming Shorts" --limit 5` use the official YouTube Data API to discover public metadata, then the official IFrame Player API for user-controlled viewing. By default, the UI is preview-only: it does not persist player timing, notes, or session observations, and it does not download, cache, extract, or analyze audiovisual streams.
 
-Creative planning, music ranking, review, and revision use Gemini by default through Google's OpenAI-compatible endpoint (`AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL=gemini-3.5-flash-lite`). Set `AI_PROVIDER=openai` to select the retained OpenAI option. Gemini direct YouTube-URL video understanding is not currently used by the trainer; the local gameplay editor still sends its existing low-resolution frame samples to the configured creative provider. Keep the Gemini key in `.env`; never put it in the frontend or commit it.
+Creative planning, music ranking, review, and revision run through **Puter.js in the dashboard browser** (free, keyless, user-pays; default model `qwen/qwen3.7-plus`, override with `PUTER_MODEL` in `.env`). No provider API keys exist in this project. The CLI has no browser and uses the measured local feature planner. Direct YouTube-URL video understanding is not used anywhere; the creative editor only ever sends low-resolution frame samples of your own footage to the model.
 
 Files in this directory:
 

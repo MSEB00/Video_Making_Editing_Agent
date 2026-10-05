@@ -12,8 +12,8 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
                                               │
                           ┌───────────────────┼────────────────────────┐
                           │  classic mode     │  creative mode         │
-                          │  style presets    │  AI plan (Gemini/      │
-                          │  transitions      │  OpenAI-compatible)    │
+                          │  style presets    │  AI plan (Puter.js     │
+                          │  transitions      │  Qwen, in-browser)     │
                           │  BGM + SFX mix    │  Jamendo music search  │
                           │  color grade      │  learned style profile │
                           │  16:9 / 9:16      │  captions + emphasis   │
@@ -50,10 +50,12 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
 - **Aspect-ratio targeting** — 16:9 (YouTube) and 9:16 (Shorts/Reels/
   TikTok) with crop-first vertical reframing (no upscale-then-crop waste)
   and optional punch-zoom emphasis.
-- **AI creative mode** — an OpenAI-compatible planner (Google Gemini by
-  default, OpenAI optional) analyses low-res frames + media facts, then
-  produces a shot list, captions, emphasis, transition plan, and music
-  direction; a render-critique step allows one revision pass.
+- **AI creative mode (free, keyless)** — the dashboard runs creative
+  planning through **Puter.js in your browser** (Qwen models by default,
+  "user-pays", no API keys): the planner analyses low-res frames + media
+  facts and produces a shot list, captions, emphasis, transition plan and
+  music direction; a render-critique loop allows configurable revisions.
+  The CLI (no browser) uses the measured local feature planner.
 - **Automatic online learning (legal)** — `collect-references` downloads
   edited short-form clips (<=180 s duration gate) from two licensed
   providers: **Pexels** (license permits download+reuse; free API key) and
@@ -131,10 +133,11 @@ python main.py edit input\my_session --source-clips selected
 # Only create the queued job record, run later from the dashboard
 python main.py process input\my_session --queue-only
 
-# Full CREATIVE pipeline: AI plan → render → review → revise (uses the
-# hosted model when GEMINI_API_KEY/OPENAI_API_KEY is set, otherwise the
-# measured local feature planner). Writes output\job_N_final.mp4 plus an
-# .edit-plan.json artifact with full decision provenance.
+# Full CREATIVE pipeline: plan → render → review → revise. The CLI uses the
+# measured local feature planner; for free keyless AI planning (Puter.js
+# Qwen in your browser), start the dashboard and request the edit in chat.
+# Writes output\job_N_final.mp4 plus an .edit-plan.json artifact with full
+# decision provenance.
 python main.py edit input\my_session --platform youtube_shorts --duration 30 --request "fast montage, punchy hook"
 
 # Discover reference metadata for a research topic (needs YOUTUBE_DATA_API_KEY)
@@ -228,7 +231,9 @@ local-only `/research` page for reference-video observations.
 main.py                     CLI entry point (initdb / process / research / train)
 app/
   agent/short_form_editor.py    creative-mode end-to-end agent
-  ai/creative_editor.py         Gemini/OpenAI-compatible planner + critic
+  ai/prompts.py                 creative-model prompts + tolerant JSON parsing
+  ai/remote_json_model.py       transport-agnostic remote creative model
+                                (dashboard Puter.js bridge today)
   ai/local_editing.py           offline heuristics (no-API fallback)
   analysis/media_context.py     ffprobe facts + low-res frames for the AI
   audio/bgm_manager.py          BGM library (user assets + Jamendo)
@@ -246,6 +251,8 @@ app/
   utilities/                    ffmpeg wrapper, logger, files, hardware probe
 config/                     YAML configuration
 dashboard/                  Flask + SocketIO chat dashboard & research UI
+  puter_bridge.py               SocketIO → browser Puter.js AI transport
+  static/puter_ai.js            client-side Puter call handler
 training/                   dataset build/analyze/train scripts + data
 assets/bgm, assets/sfx      audio assets (user-managed / generated)
 tests/                      pytest suite (45 tests)

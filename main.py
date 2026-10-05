@@ -210,9 +210,9 @@ def edit(input_path: str, platform: str, game: str, request: str, target_duratio
          shot_order: str, source_clips: str) -> None:
     """Run the full CREATIVE pipeline: AI plan → render → review → revise.
 
-    Uses the hosted creative model when configured (GEMINI_API_KEY /
-    OPENAI_API_KEY) and falls back to the measured local feature planner
-    otherwise. Produces output/job_N_final.mp4 plus an .edit-plan.json
+    The CLI has no browser, so it uses the measured local feature planner.
+    For free keyless AI planning (Puter.js/Qwen), run creative edits from the
+    dashboard chat instead: python dashboard/app.py Produces output/job_N_final.mp4 plus an .edit-plan.json
     artifact with full decision provenance.
     """
     from app.storage.db import SessionLocal

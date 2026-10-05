@@ -17,7 +17,8 @@ def fresh_db(monkeypatch):
     yield db_path
     reset_engine()
 
-from app.ai.creative_editor import ShortFormEditingModel, _parse_json_object
+from app.ai.prompts import parse_json_object as _parse_json_object
+from app.ai.remote_json_model import RemoteJSONModel, RemoteJSONModelError
 from app.ai.local_editing import LocalShortFormEditingModel
 from app.editing.editor import EditOptions
 from app.agent.short_form_editor import ShortFormCreativeEditor
@@ -38,21 +39,12 @@ def test_parse_json_object_handles_real_llm_shapes():
     assert _parse_json_object(None) is None
 
 
-class _StubClient:
-    def __init__(self, content):
-        completions = type("Completions", (), {"create": lambda self, **kw: type(
-            "R", (), {"choices": [type("C", (), {"message": type("M", (), {"content": content})()})()]})()})()
-        self.chat = type("Chat", (), {"completions": completions})()
-
-
-def test_json_call_salvages_fenced_plan_and_reports_garbage(monkeypatch):
-    monkeypatch.setenv("AI_PROVIDER", "gemini")
-    monkeypatch.setenv("GEMINI_API_KEY", "test")
-    fenced = ShortFormEditingModel(client=_StubClient('```json\n{"platform": "youtube_shorts"}\n```'), model="m")
+def test_remote_model_salvages_fenced_plan_and_reports_garbage():
+    fenced = RemoteJSONModel(call=lambda **kw: '```json\n{"platform": "youtube_shorts"}\n```')
     assert fenced.create_plan({}, [], {}, "youtube_shorts", 10)["platform"] == "youtube_shorts"
 
-    garbage = ShortFormEditingModel(client=_StubClient("I cannot help with that."), model="m")
-    with pytest.raises(RuntimeError, match="unparseable JSON"):
+    garbage = RemoteJSONModel(call=lambda **kw: "I cannot help with that.")
+    with pytest.raises(RemoteJSONModelError, match="unparseable JSON"):
         garbage.create_plan({}, [], {}, "youtube_shorts", 10)
 
 
@@ -158,51 +150,20 @@ def test_explicit_bgm_off_disables_music(tmp_path, monkeypatch):
     assert music.search_calls == []
 
 
-# ── Job-86 class: truncated music ranking must not kill the job ──────────────
+# ── Job-86 class: truncated model output must never kill the job ─────────────
 
-class _SequenceClient:
-    """Stub returning a scripted sequence of (content, finish_reason)."""
+def test_truncated_remote_response_raises_with_snippet():
+    calls = []
 
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.calls = []
-        outer = self
+    def call(**kwargs):
+        calls.append(kwargs)
+        return '{ "track_id": "20'  # job-86 style truncation
 
-        class Completions:
-            def create(self, **kwargs):
-                outer.calls.append(kwargs)
-                content, finish = outer.responses.pop(0)
-                message = type("M", (), {"content": content})()
-                choice = type("C", (), {"message": message, "finish_reason": finish})()
-                return type("R", (), {"choices": [choice]})()
-
-        self.chat = type("Chat", (), {"completions": Completions()})()
-
-
-def test_json_call_retries_on_length_truncation(monkeypatch):
-    monkeypatch.setenv("AI_PROVIDER", "gemini")
-    monkeypatch.setenv("GEMINI_API_KEY", "test")
-    client = _SequenceClient([
-        ('{ "track_id": "20', "length"),                     # job-86 style truncation
-        ('{"track_id": "2060076", "rationale": "fits"}', "stop"),
-    ])
-    model = ShortFormEditingModel(client=client, model="m")
-    result = model.rank_music({}, {"music_requirements": {}}, [])
-    assert result["track_id"] == "2060076"
-    assert len(client.calls) == 2
-    assert client.calls[1]["max_tokens"] == client.calls[0]["max_tokens"] * 4  # budget raised
-
-
-def test_json_call_gives_up_after_second_truncation(monkeypatch):
-    monkeypatch.setenv("AI_PROVIDER", "gemini")
-    monkeypatch.setenv("GEMINI_API_KEY", "test")
-    client = _SequenceClient([
-        ('{ "track_id": "2', "length"),
-        ('{ "track_id": "20', "length"),
-    ])
-    model = ShortFormEditingModel(client=client, model="m")
-    with pytest.raises(RuntimeError, match="unparseable JSON"):
+    model = RemoteJSONModel(call=call, model_name="puter:qwen")
+    with pytest.raises(RemoteJSONModelError, match="unparseable JSON"):
         model.rank_music({}, {"music_requirements": {}}, [])
+    assert calls and calls[0]["max_tokens"] == 1400
+    assert calls[0]["system"].startswith("Select the Jamendo candidate")
 
 
 def test_music_ranking_failure_degrades_to_no_bgm(tmp_path, monkeypatch):

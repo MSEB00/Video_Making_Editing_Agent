@@ -8,7 +8,7 @@ import dashboard.app as dashboard_app_module
 from app.storage.db import init_db, SessionLocal
 from app.storage.models import Job
 from app.publishing.publisher import publish_video
-from app.ai.creative_editor import CreativeAIConfigurationError, ShortFormEditingModel, _select_prompt_frames
+from app.ai.prompts import select_prompt_frames
 from app.agent.short_form_editor import ShortFormCreativeEditor
 from app.editing.edit_plan import EditPlan
 from app.editing.editor import EditOptions, _choose_clip_segment, _choose_transition_type, _select_source_clips, _split_single_source_shots
@@ -297,7 +297,7 @@ def test_prompt_frames_cover_distinct_sources_before_repeating_sources():
         for timestamp in (0.18, 0.62)
     ]
 
-    selected = _select_prompt_frames(frames)
+    selected = select_prompt_frames(frames)
 
     assert len(selected) == 16
     assert len({frame["source_index"] for frame in selected}) == 16
@@ -614,22 +614,6 @@ def test_dashboard_feedback_accepts_only_completed_edits(fresh_db, tmp_path, mon
     assert recorded["rating"] == -1
     assert recorded["tags"] == ["too_fast"]
     assert recorded["context"]["job_id"] == job_id
-
-
-def test_ai_creative_mode_requires_api_key(monkeypatch):
-    monkeypatch.setenv("AI_PROVIDER", "openai")
-    monkeypatch.setenv("OPENAI_API_KEY", "")
-
-    with pytest.raises(CreativeAIConfigurationError, match="OPENAI_API_KEY"):
-        ShortFormEditingModel()
-
-
-def test_ai_creative_mode_gemini_requires_api_key(monkeypatch):
-    monkeypatch.setenv("AI_PROVIDER", "gemini")
-    monkeypatch.setenv("GEMINI_API_KEY", "")
-
-    with pytest.raises(CreativeAIConfigurationError, match="GEMINI_API_KEY"):
-        ShortFormEditingModel()
 
 
 def test_sfx_library_provides_original_described_assets(tmp_path):

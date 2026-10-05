@@ -1,4 +1,4 @@
-﻿"""Orchestrator for the Gaming Video Agent.
+"""Orchestrator for the Gaming Video Agent.
 
 Loads a Job, gathers video files from its input directory, records each as a
 Media entry (kind='raw'), applies professional editing (transitions, BGM,
@@ -34,7 +34,8 @@ def _gather_media_files(input_dir: pathlib.Path) -> List[pathlib.Path]:
 def orchestrate_job(
     job_id: int,
     options: Optional[EditOptions] = None,
-    progress_callback: Optional[Callable[[str, str], None]] = None
+    progress_callback: Optional[Callable[[str, str], None]] = None,
+    model: Optional[object] = None
 ) -> pathlib.Path:
     """Run the full editing pipeline for a given *job_id*.
     Returns the path to the rendered output video.
@@ -105,7 +106,7 @@ def orchestrate_job(
         if options.creative_mode:
             from app.agent.short_form_editor import ShortFormCreativeEditor
 
-            creative_artifact = ShortFormCreativeEditor().create_edit(
+            creative_artifact = ShortFormCreativeEditor(model=model).create_edit(
                 input_files=media_files,
                 output_path=output_file,
                 options=options,

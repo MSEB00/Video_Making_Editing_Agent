@@ -1,4 +1,4 @@
-﻿import sys, os
+import sys, os
 # Ensure project root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -292,11 +292,26 @@ def _run_pipeline(sid, folder_path, folder_name=None, edit_opts=None):
 
     _emit_step(sid, '⚡', f'Job #{job_id} scheduled - starting video rendering engine...')
 
+    creative_model = None
+    if options.creative_mode:
+        try:
+            from app.ai.remote_json_model import RemoteJSONModel
+            from dashboard.puter_bridge import PuterBrowserTransport
+
+            transport = PuterBrowserTransport(socketio, sid)
+            creative_model = RemoteJSONModel(
+                transport.call, model_name=f"puter:{transport.model_name}"
+            )
+            _emit_step(sid, '🧠', f'Creative AI via Puter.js in your browser ({transport.model_name}, free, no API keys).')
+        except Exception:
+            creative_model = None
+
     try:
         output_path = orchestrate_job(
             job_id=job_id,
             options=options,
-            progress_callback=lambda icon, msg: _emit_step(sid, icon, msg)
+            progress_callback=lambda icon, msg: _emit_step(sid, icon, msg),
+            model=creative_model
         )
         out_p = pathlib.Path(output_path)
         out_size_mb = round(out_p.stat().st_size / (1024 * 1024), 2)

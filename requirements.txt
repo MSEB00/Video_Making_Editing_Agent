@@ -6,8 +6,8 @@ python-dotenv==1.2.3
 PyYAML>=6.0.2
 SQLAlchemy>=2.0.36
 
-# AI / LLM
-openai>=1.50.0
+# AI / LLM: creative models run through Puter.js in the dashboard browser
+# (free, keyless, user-pays). No provider SDK or API key is required here.
 
 # Media Processing
 Pillow>=11.0.0
