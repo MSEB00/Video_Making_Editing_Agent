@@ -68,7 +68,7 @@ class ShortFormEditingModel:
                     f"AI creative editing with {self.provider} requires {key_name}. Add it to the project .env file."
                 )
             from openai import OpenAI
-            client_options = {"api_key": api_key, "timeout": 90.0, "max_retries": 1}
+            client_options = {"api_key": api_key, "timeout": 90.0, "max_retries": 2}
             if base_url:
                 client_options["base_url"] = base_url
             self.client = OpenAI(**client_options)
@@ -129,7 +129,7 @@ class ShortFormEditingModel:
             "asset_filename selected only from available_sfx_assets, and level; it may be empty when no asset fits. "
             "Keep captions optional and concise."
         )
-        return self._json_call(system, context, frames, max_tokens=2200)
+        return self._json_call(system, context, frames, max_tokens=3500)
 
     def rank_music(
         self,
@@ -182,7 +182,7 @@ class ShortFormEditingModel:
             "platform": platform,
             "target_duration_seconds": target_duration,
         }
-        return self._json_call(system, payload, [], max_tokens=2200)
+        return self._json_call(system, payload, [], max_tokens=3500)
     def _json_call(
         self,
         system: str,
