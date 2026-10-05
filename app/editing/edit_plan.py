@@ -66,25 +66,40 @@ class EditPlan:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any], source_count: int, max_shots: int = 24) -> "EditPlan":
-        shots = [PlannedShot.from_dict(item, source_count) for item in value.get("shots", [])]
+        if not isinstance(value, dict):
+            raise ValueError("AI edit plan must be a JSON object.")
+        # Shots are the critical payload: skip individually malformed entries
+        # (LLMs vary shapes between runs/models) but require >=1 valid shot.
+        raw_shots = value.get("shots") if isinstance(value.get("shots"), list) else []
+        shots: list[PlannedShot] = []
+        for item in raw_shots:
+            if not isinstance(item, dict):
+                continue
+            try:
+                shots.append(PlannedShot.from_dict(item, source_count))
+            except (KeyError, TypeError, ValueError):
+                continue
         if not shots:
-            raise ValueError("AI returned an edit plan with no shots.")
+            raise ValueError("AI returned an edit plan with no usable shots.")
         if len(shots) > max_shots:
             raise ValueError(f"AI edit plan exceeds the {max_shots}-shot safety limit.")
         return cls(
-            platform=str(value.get("platform", "youtube_shorts")),
+            platform=str(value.get("platform", "youtube_shorts"))[:40],
             strategy=str(value.get("strategy", "contextual highlight"))[:120],
             rationale=str(value.get("rationale", ""))[:1200],
-            target_duration=max(1.0, float(value.get("target_duration", sum(s.end - s.start for s in shots)))),
+            target_duration=_safe_positive_float(
+                value.get("target_duration"),
+                default=sum(s.end - s.start for s in shots),
+            ),
             shots=shots,
-            alternatives=[dict(item) for item in value.get("alternatives", [])[:2]],
-            music_requirements=dict(value.get("music_requirements") or {}),
-            music_mix=dict(value.get("music_mix") or {}),
-            sound_design=[dict(item) for item in value.get("sound_design", [])[:24]],
-            ending=str(value.get("ending", ""))[:300],
-            selected_track=dict(value["selected_track"]) if value.get("selected_track") else None,
-            review=dict(value["review"]) if value.get("review") else None,
-            version=max(1, int(value.get("version", 1))),
+            alternatives=_coerce_alternatives(value.get("alternatives")),
+            music_requirements=_as_plain_dict(value.get("music_requirements")),
+            music_mix=_as_plain_dict(value.get("music_mix")),
+            sound_design=_coerce_sound_design(value.get("sound_design")),
+            ending=str(value.get("ending") or "")[:300],
+            selected_track=_as_optional_dict(value.get("selected_track")),
+            review=_as_optional_dict(value.get("review")),
+            version=_safe_int(value.get("version"), default=1, minimum=1),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -93,3 +108,57 @@ class EditPlan:
     @property
     def total_shot_duration(self) -> float:
         return sum(max(0.0, shot.end - shot.start) for shot in self.shots)
+
+
+def _as_plain_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_optional_dict(value: Any) -> Optional[dict[str, Any]]:
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _coerce_alternatives(value: Any, limit: int = 2) -> list[dict[str, Any]]:
+    """Normalize alternatives: dicts pass through, bare strings become names.
+
+    Hosted models vary between {"name","description"} dicts and plain strings
+    across runs/models; a decorative field must never crash a whole plan.
+    """
+    items = value if isinstance(value, list) else []
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict) and item:
+            out.append({str(key)[:60]: item[key] for key in list(item)[:8]})
+        elif isinstance(item, str) and item.strip():
+            out.append({"name": item.strip()[:200]})
+        if len(out) >= max(1, limit):
+            break
+    return out
+
+
+def _coerce_sound_design(value: Any, limit: int = 24) -> list[dict[str, Any]]:
+    items = value if isinstance(value, list) else []
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict) and item:
+            out.append(item)
+        elif isinstance(item, str) and item.strip():
+            out.append({"description": item.strip()[:200]})
+        if len(out) >= max(1, limit):
+            break
+    return out
+
+
+def _safe_positive_float(value: Any, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return max(1.0, float(default))
+    return number if number > 0 else max(1.0, float(default))
+
+
+def _safe_int(value: Any, default: int, minimum: int) -> int:
+    try:
+        return max(minimum, int(value))
+    except (TypeError, ValueError):
+        return default

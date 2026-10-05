@@ -435,3 +435,49 @@ def test_cli_import_reference_analyzes_and_registers(tmp_path):
         "--category", "not_a_category",
     ])
     assert bad.exit_code != 0  # choice validation rejects unknown categories
+
+
+# ── EditPlan parser robustness (job-84 crash class) ──────────────────────────
+
+def test_edit_plan_survives_string_alternatives_and_junk_fields():
+    from app.editing.edit_plan import EditPlan
+
+    plan = EditPlan.from_dict({
+        "platform": "youtube_shorts",
+        "strategy": "kill montage",
+        "target_duration": None,               # junk → falls back to shot sum
+        "version": "2",                        # string → coerced
+        "shots": [
+            {"source_index": 0, "start": 0, "end": 3, "role": "hook", "transition": "cut"},
+            "not-a-shot",                      # junk entry → skipped
+            {"source_index": 9, "start": 0, "end": 3},   # bad index → skipped
+            {"source_index": 1, "start": 5, "end": 2},   # end <= start → skipped
+            {"source_index": 1, "start": 2, "end": 6, "visual_emphasis": "punch_zoom"},
+        ],
+        "alternatives": ["Linear build", "Rapid loop", {"name": "dict one", "description": "d"}],
+        "music_requirements": "not a dict",    # junk → {}
+        "music_mix": None,                     # junk → {}
+        "sound_design": ["a moment", {"time": 1.0, "asset_filename": "original_impact.wav"}],
+        "ending": None,
+        "selected_track": "junk",              # junk → None
+        "review": None,
+    }, source_count=2)
+    assert len(plan.shots) == 2
+    assert plan.target_duration == 7.0          # 3 + 4 from valid shots
+    assert plan.version == 2
+    assert plan.alternatives == [{"name": "Linear build"}, {"name": "Rapid loop"}]
+    assert plan.music_requirements == {} and plan.music_mix == {}
+    assert plan.sound_design[0] == {"description": "a moment"}
+    assert plan.sound_design[1]["asset_filename"] == "original_impact.wav"
+    assert plan.selected_track is None and plan.review is None
+    assert plan.shots[1].visual_emphasis == ["punch_zoom"]
+
+
+def test_edit_plan_rejects_only_when_no_usable_shots():
+    from app.editing.edit_plan import EditPlan
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="no usable shots"):
+        EditPlan.from_dict({"shots": ["junk", {"source_index": 5, "start": 0, "end": 1}]}, source_count=2)
+    with _pytest.raises(ValueError, match="JSON object"):
+        EditPlan.from_dict("not a dict", source_count=2)
