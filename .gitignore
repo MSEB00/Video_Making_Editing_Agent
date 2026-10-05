@@ -75,3 +75,10 @@ Thumbs.db
 desktop.ini
 # Archives
 *.zip
+# learned state is machine-local (datasets, policies, trajectories)
+training/grammar/
+training/trajectories/
+training/raw/
+training/licensed_inbox/
+training/timelines/
+training/features/*.json

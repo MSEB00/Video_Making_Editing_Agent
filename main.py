@@ -14,6 +14,8 @@ import datetime as dt
 import time
 
 import click
+from typing import Any
+
 from dotenv import load_dotenv
 
 from app.config.config_loader import load_config
@@ -666,6 +668,266 @@ def import_reference(video_path: str, rights_basis: str, platform: str, style_ta
         },
         "next_step": "Add more references (>=5 distinct, >=3 creator groups), then: python main.py train",
     }, indent=2))
+
+
+@cli.command(name="grammar-extract")
+@click.argument('videos', nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.option('--from-references', is_flag=True,
+              help='Extract from every imported training reference (training/raw).')
+def grammar_extract(videos: tuple[str, ...], from_references: bool) -> None:
+    """Extract editing-grammar sequences from reference videos (the TEACHER pass).
+
+    Runs the AutomaticReferenceAnalyzer (scene cuts, motion envelope, audio
+    energy, silence → labeled timeline tokens) over legally obtained
+    references and appends them to training/grammar/sequences.jsonl.
+    Follow with: python main.py train-policy
+    """
+    from app.learning.sequence_dataset import SequenceDataset
+    from app.learning.sequence_extractor import AutomaticReferenceAnalyzer
+
+    dataset = SequenceDataset()
+    analyzer = AutomaticReferenceAnalyzer()
+    targets: list[tuple[pathlib.Path, dict]] = []
+    if from_references:
+        from app.training.reference_pipeline import ReferenceTrainingPipeline
+        for example in ReferenceTrainingPipeline()._read_examples():
+            source_path = example.get("source_path")
+            if source_path and pathlib.Path(source_path).is_file():
+                targets.append((pathlib.Path(source_path), example))
+    targets += [(pathlib.Path(video), {}) for video in videos]
+    if not targets:
+        raise click.UsageError("No videos given and --from-references found none. "
+                               "Import references first (collect-references / import-reference).")
+    extracted, skipped = [], []
+    for index, (path, meta) in enumerate(targets, start=1):
+        click.echo(f"[OBSERVER] Analyzing reference {index}/{len(targets)}: {path.name}")
+        record = analyzer.analyze_file(path, meta)
+        if record is None:
+            skipped.append(str(path))
+            continue
+        dataset.add(record)
+        tokens = [seg["token"] for seg in record["sequence"]]
+        extracted.append({
+            "reference_id": record["reference_id"][:16],
+            "duration": record["duration"],
+            "segments": len(tokens),
+            "tokens_head": tokens[:8],
+            "cut_rate": record["stats"].get("cut_rate"),
+        })
+    click.echo(json.dumps({
+        "status": "extracted",
+        "extracted": extracted,
+        "skipped": skipped,
+        "dataset_sequences": len(dataset.records()),
+        "next_step": "python main.py train-policy",
+    }, indent=2))
+
+
+@cli.command(name="train-policy")
+def train_policy() -> None:
+    """Train/validate/promote the editing policy from the grammar dataset.
+
+    Honest reporting (spec §13): sequence counts, creator counts, held-out
+    log-likelihood vs uniform baseline vs previous policy, promotion decision,
+    learning state. Never claims training it did not do.
+    """
+    from app.learning.policy_model import PolicyTrainer, learning_state
+    from app.learning.sequence_dataset import SequenceDataset
+
+    dataset = SequenceDataset()
+    trainer = PolicyTrainer()
+    records = dataset.records()
+    if not records:
+        click.echo(json.dumps({
+            "status": "insufficient_sequences", "sequence_count": 0,
+            "learning_state": "NO_DATA",
+            "next_step": "python main.py grammar-extract --from-references",
+        }, indent=2))
+        return
+    dataset_info = dataset.snapshot()
+    partitions = dataset.creator_split()
+    held_out = partitions["validation"] + partitions["test"]
+    result = trainer.train_candidate(partitions["train"], held_out, dataset_info)
+    result["learning_state"] = learning_state(len(records), trainer)
+    result["dataset"] = dataset_info
+    click.echo(json.dumps({"training_report": result}, indent=2))
+
+
+@cli.command(name="policy-status")
+def policy_status() -> None:
+    """Report the learning state machine, dataset, policy and trajectory stats."""
+    from app.learning.policy_model import PolicyTrainer, learning_state
+    from app.learning.sequence_dataset import SequenceDataset
+
+    dataset = SequenceDataset()
+    trainer = PolicyTrainer()
+    records = dataset.records()
+    active = trainer.load_active()
+    trajectories_path = trainer.root.parent / "trajectories" / "edits.jsonl"
+    trajectory_count = 0
+    if trajectories_path.is_file():
+        trajectory_count = sum(1 for line in trajectories_path.read_text(encoding="utf-8").splitlines() if line.strip())
+    click.echo(json.dumps({
+        "learning_state": learning_state(len(records), trainer),
+        "grammar_sequences": len(records),
+        "creators": len({str(r.get("creator_group")) for r in records}),
+        "dataset_snapshot": dataset.state().get("last_snapshot"),
+        "policy": ({
+            "version": active.get("version"),
+            "stage": active.get("stage"),
+            "validation": active.get("validation"),
+            "dataset": active.get("dataset"),
+            "used_in_edits": (active.get("usage") or {}).get("edits_used_in", 0),
+            "unknown_channels": active.get("unknown_channels"),
+        } if active else None),
+        "edit_trajectories_recorded": trajectory_count,
+    }, indent=2))
+
+
+@cli.command(name="ab-test")
+@click.argument('input_path', type=click.Path(exists=True, file_okay=False), metavar='CLIP_DIR')
+@click.option('--baseline', default=None, type=click.Path(exists=True, dir_okay=False),
+              help='Prior edit-plan artifact to compare against (e.g. output/job_91_final.edit-plan.json).')
+@click.option('--platform', default='youtube_shorts', show_default=True)
+@click.option('--duration', 'target_duration', default=40, type=click.IntRange(5, 180), show_default=True)
+@click.option('--game', default='valorant', show_default=True)
+def ab_test(input_path: str, baseline: str | None, platform: str, target_duration: int, game: str) -> None:
+    """A/B: legacy activity planner vs learned policy on the SAME footage.
+
+    Plan-level comparison (no rendering): builds both plans, scores both with
+    the learned policy, records a preference entry (spec §37/§42), and prints
+    the full comparison — including the exact baseline artifact values when
+    --baseline is supplied.
+    """
+    from app.analysis.games import get_event_detector
+    from app.analysis.media_context import analyze_sources
+    from app.learning.policy_inference import PolicyInference
+    from app.learning.policy_model import PolicyTrainer
+    from app.learning.policy_planner import LearnedPolicyPlanner, get_learning_state
+
+    clip_dir = pathlib.Path(input_path)
+    exts = {".mp4", ".mov", ".mkv"}
+    files = sorted(p for p in clip_dir.iterdir() if p.suffix.lower() in exts)
+    if not files:
+        raise click.UsageError(f"No clips in {clip_dir}")
+    click.echo(f"Analyzing {len(files)} source(s)...")
+    media_context, frames = analyze_sources(files)
+    detector = get_event_detector(game)
+    if detector is not None:
+        for index, source in enumerate(media_context.get("sources") or []):
+            if index >= len(files):
+                break
+            try:
+                events = detector.detect(files[index])
+            except Exception:
+                events = []
+            source["gameplay_events"] = [
+                {"kind": e.get("kind"), "start": e.get("start"), "end": e.get("end", e.get("start")),
+                 "confidence": e.get("confidence")}
+                for e in events
+            ]
+
+    # Candidate A — legacy activity planner
+    from app.ai.local_editing import LocalShortFormEditingModel
+    legacy = LocalShortFormEditingModel()
+    plan_a = legacy.create_plan(files, media_context, platform, target_duration)
+
+    # Candidate B — learned policy
+    state = get_learning_state()
+    plan_b = None
+    planner_b = None
+    if state in ("TRAINED", "VALIDATED", "ACTIVE"):
+        planner_b = LearnedPolicyPlanner()
+        plan_b = planner_b.create_plan(
+            media_context=media_context, frames=frames, style_profile={},
+            platform=platform, target_duration=target_duration,
+            user_preferences={"source_paths": [str(f) for f in files],
+                              "chronological_assembly": True, "full_session_coverage": True},
+            seed=1,
+        )
+
+    trainer = PolicyTrainer()
+    active = trainer.load_active()
+    inference = PolicyInference(active) if active else None
+
+    def summarize(plan: dict, label: str) -> dict:
+        shots = plan.get("shots") or []
+        durations = [float(s["end"]) - float(s["start"]) for s in shots]
+        total = sum(durations) or 1.0
+        scored = None
+        if inference is not None and shots:
+            candidate = {
+                "name": plan.get("strategy"), "source_count": len(media_context["sources"]),
+                "target_duration": target_duration,
+                "shots": [{**s, "intensity": None, "has_event": False} for s in shots],
+            }
+            scored = inference.score_structure(candidate)
+        return {
+            "candidate": label,
+            "strategy": plan.get("strategy"),
+            "shot_count": len(shots),
+            "durations": [round(d, 2) for d in durations],
+            "cut_density": round(max(0, len(shots) - 1) / total, 3),
+            "sources_used": sorted({int(s["source_index"]) for s in shots}),
+            "captions": sum(1 for s in shots if s.get("caption")),
+            "emphasis": sum(1 for s in shots if s.get("visual_emphasis")),
+            "music_requested": bool(plan.get("music_requirements")),
+            "policy_score": (scored or {}).get("composite"),
+            "score_breakdown": (scored or {}).get("components"),
+        }
+
+    comparison: dict[str, Any] = {
+        "learning_state": state,
+        "candidate_a_legacy": summarize(plan_a, "A_legacy_activity"),
+    }
+    if plan_b is not None:
+        comparison["candidate_b_policy"] = summarize(plan_b, "B_learned_policy")
+        comparison["candidate_c_policy_retrieval"] = {
+            "candidate": "C_policy_plus_retrieval",
+            "retrieved_references": (planner_b.diagnostics or {}).get("retrieved_references"),
+            "note": "retrieval blending is included in B's score when references match",
+        }
+        preference = {
+            "recorded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "input": str(clip_dir),
+            "candidates": {
+                "A_legacy_activity": comparison["candidate_a_legacy"]["policy_score"],
+                "B_learned_policy": comparison["candidate_b_policy"]["policy_score"],
+            },
+            "preferred": (
+                "B_learned_policy"
+                if (comparison["candidate_b_policy"]["policy_score"] or 0)
+                >= (comparison["candidate_a_legacy"]["policy_score"] or 0)
+                else "A_legacy_activity"
+            ),
+        }
+        pref_path = trainer.root.parent / "trajectories" / "preferences.jsonl"
+        pref_path.parent.mkdir(parents=True, exist_ok=True)
+        with pref_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(preference, ensure_ascii=True) + "\n")
+        comparison["preference_recorded"] = preference
+    else:
+        comparison["candidate_b_policy"] = {
+            "status": "BLOCKED",
+            "reason": f"learning_state={state}; run: python main.py grammar-extract --from-references && python main.py train-policy",
+        }
+    if baseline:
+        base = json.loads(pathlib.Path(baseline).read_text(encoding="utf-8"))
+        base_timeline = base.get("timeline") or []
+        comparison["baseline_artifact"] = {
+            "path": str(baseline),
+            "planning_mode": base.get("planning_mode"),
+            "model_version": base.get("model_version"),
+            "strategy": base.get("strategy"),
+            "shots": len(base_timeline),
+            "durations": [item.get("duration") for item in base_timeline],
+            "captions": len(base.get("captions") or []),
+            "sfx": len(base.get("sfx") or []),
+            "music_enabled": (base.get("music_mix") or {}).get("enabled"),
+            "shot_order": base.get("shot_order"),
+            "revision_count": base.get("revision_count"),
+        }
+    click.echo(json.dumps(comparison, indent=2))
 
 
 @cli.command(name="events")

@@ -58,6 +58,7 @@ class RemoteJSONModel:
         user_preferences: Optional[dict[str, Any]] = None,
         available_sfx: Optional[list[dict[str, Any]]] = None,
         metadata_priors: Optional[dict[str, Any]] = None,
+        seed: Optional[int] = None,
     ) -> dict[str, Any]:
         context = build_plan_context(
             media_context=media_context,

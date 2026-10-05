@@ -40,7 +40,7 @@ class ManualPlanModel:
             self._local = local
         return self._local
 
-    def create_plan(self, **_: Any) -> dict[str, Any]:
+    def create_plan(self, **_: Any) -> dict[str, Any]:  # seed kwarg tolerated
         value = parse_json_object(self._plan_text)
         if value is None:
             snippet = " ".join(self._plan_text.split())[:160]
