@@ -133,9 +133,16 @@ python main.py edit input\my_session --source-clips selected
 # Only create the queued job record, run later from the dashboard
 python main.py process input\my_session --queue-only
 
-# Full CREATIVE pipeline: plan → render → review → revise. The CLI uses the
-# measured local feature planner; for free keyless AI planning (Puter.js
-# Qwen in your browser), start the dashboard and request the edit in chat.
+# Full CREATIVE pipeline: plan → render → review → revise.
+# Planning brains (pick one):
+#   a) Dashboard chat  — free Puter.js Qwen in your browser (no keys)
+#   b) ChatGPT web paste workflow (no keys, no automation of any website):
+python main.py plan-request input\my_session --duration 40 --request "kill montage in match order"
+#      → copy temp\ai\request_*.txt into ChatGPT web (attach the exported
+#        frame images for vision planning), save the reply to the printed
+#        response file, then:
+python main.py edit input\my_session --plan-file temp\ai\response_XXXX.txt --duration 40
+#   c) CLI default — measured local feature planner (no AI at all)
 # Writes output\job_N_final.mp4 plus an .edit-plan.json artifact with full
 # decision provenance.
 python main.py edit input\my_session --platform youtube_shorts --duration 30 --request "fast montage, punchy hook"
@@ -275,6 +282,10 @@ CLI commands (61 tests).
 
 - Output is always H.264 **yuv420p** (High profile) — the safe, universal
   format for YouTube/Instagram processing and playback.
+- Captions/titles need FFmpeg's `drawtext` filter (present in standard
+  builds, e.g. Gyan full / most distro packages). Minimal builds without it
+  degrade gracefully: captions are skipped with a console notice instead of
+  failing the render.
 - The libx264 fallback preset adapts to CPU core count (≤2 cores:
   `ultrafast`, ≤4: `veryfast`, else `fast`) so the filter graph can never
   outrun the encoder and balloon the frame queue on weak machines.

@@ -361,7 +361,7 @@ def test_cli_edit_order_flag_maps_to_options(tmp_path, monkeypatch, fresh_db):
     (clip_dir / "a.mp4").write_bytes(b"clip")
     captured = {}
 
-    def fake_orchestrate(job_id, options=None, progress_callback=None):
+    def fake_orchestrate(job_id, options=None, progress_callback=None, model=None):
         captured["options"] = options
         out = tmp_path / f"job_{job_id}_final.mp4"
         out.write_bytes(b"r")
@@ -521,7 +521,7 @@ def test_cli_source_clips_flag_maps_to_options(tmp_path, monkeypatch, fresh_db):
     (clip_dir / "a.mp4").write_bytes(b"clip")
     captured = {}
 
-    def fake_orchestrate(job_id, options=None, progress_callback=None):
+    def fake_orchestrate(job_id, options=None, progress_callback=None, model=None):
         captured["options"] = options
         out = tmp_path / f"job_{job_id}_final.mp4"
         out.write_bytes(b"r")

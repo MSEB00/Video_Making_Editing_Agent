@@ -134,6 +134,32 @@ def _escape_drawtext(value: str) -> str:
     return escaped
 
 
+_DRAWTEXT_AVAILABLE: Optional[bool] = None
+
+
+def _drawtext_supported() -> bool:
+    """Whether this FFmpeg build has the drawtext filter (cached).
+
+    Minimal builds (some static/linux distro packages) lack libfreetype;
+    captions/titles are decorative and must degrade gracefully instead of
+    killing an otherwise valid render.
+    """
+    global _DRAWTEXT_AVAILABLE
+    if _DRAWTEXT_AVAILABLE is None:
+        try:
+            res = subprocess.run(
+                [get_ffmpeg_path(), "-hide_banner", "-filters"],
+                capture_output=True, text=True, timeout=30,
+            )
+            _DRAWTEXT_AVAILABLE = any(
+                line.split()[1:2] == ["drawtext"]
+                for line in res.stdout.splitlines() if line.strip()
+            )
+        except Exception:
+            _DRAWTEXT_AVAILABLE = False
+    return _DRAWTEXT_AVAILABLE
+
+
 def _drawtext_font_option() -> str:
     font_path = os.getenv("FFMPEG_FONT_FILE")
     if not font_path:
@@ -450,7 +476,10 @@ def render_edited_video(
         final_video_label = "[v_colored]"
 
     # Optional Title Text
-    if options.title_text:
+    supports_drawtext = _drawtext_supported()
+    if options.title_text and not supports_drawtext:
+        _notify("⚠️", "Title overlay skipped: this FFmpeg build lacks the drawtext filter.")
+    if options.title_text and supports_drawtext:
         safe_title = options.title_text.replace("'", "").replace(":", "")
         filter_lines.append(
             f"{final_video_label}drawtext={_drawtext_font_option()}text='{safe_title}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=80:"
@@ -458,7 +487,11 @@ def render_edited_video(
         )
         final_video_label = "[v_titled]"
 
-    if options.planned_captions:
+    if options.planned_captions and not supports_drawtext:
+        planned_count = sum(1 for caption in options.planned_captions[:num_clips] if caption)
+        if planned_count:
+            _notify("⚠️", f"Skipped {planned_count} caption(s): this FFmpeg build lacks the drawtext filter.")
+    if options.planned_captions and supports_drawtext:
         for index, caption in enumerate(options.planned_captions[:num_clips]):
             if not caption:
                 continue

@@ -84,7 +84,10 @@
     } catch (err) {
       const message = err && err.message ? err.message : String(err);
       console.error('[puter_ai] request failed:', message);
-      reply({ ok: false, error: message });
+      const hint = /auth|sign.?in|login|permission|popup|user/i.test(message)
+        ? ' Tip: allow popups for localhost, open https://puter.com in a normal tab and sign in there first (or run puter.auth.signIn() in the browser console), then retry the request.'
+        : '';
+      reply({ ok: false, error: String(message).slice(0, 300) + hint });
     }
   });
 

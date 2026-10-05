@@ -366,7 +366,7 @@ def test_cli_edit_runs_creative_pipeline(tmp_path, monkeypatch, fresh_db):
 
     captured = {}
 
-    def fake_orchestrate(job_id, options=None, progress_callback=None):
+    def fake_orchestrate(job_id, options=None, progress_callback=None, model=None):
         captured["job_id"] = job_id
         captured["options"] = options
         output = tmp_path / "output" / f"job_{job_id}_final.mp4"

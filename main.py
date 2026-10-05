@@ -29,6 +29,152 @@ def cli() -> None:
     pass
 
 
+@cli.command(name="plan-request")
+@click.argument('input_path', type=click.Path(exists=True, file_okay=False), metavar='CLIP_DIR')
+@click.option('--platform', default='youtube_shorts', show_default=True)
+@click.option('--game', default='valorant', show_default=True)
+@click.option('--request', default='', help='Free-text creative brief for the chat AI.')
+@click.option('--duration', 'target_duration', default=40, type=click.IntRange(5, 180), show_default=True)
+@click.option('--max-frames', default=6, type=click.IntRange(0, 12), show_default=True,
+              help='Sample frames exported as images (attach them to the chat for vision planning).')
+def plan_request(input_path: str, platform: str, game: str, request: str,
+                 target_duration: int, max_frames: int) -> None:
+    """Export the creative-planning prompt for a WEB CHAT AI (e.g. ChatGPT).
+
+    Analyzes the clip folder exactly like the agent would (media facts, kill
+    events, learned style profile, SFX inventory, YouTube metadata priors),
+    then writes a paste-ready prompt file plus optional frame images under
+    temp/ai/. Paste into any chat AI, save its JSON reply to a file, then:
+
+        python main.py edit CLIP_DIR --plan-file <response file>
+    """
+    import base64
+
+    from app.analysis.games import get_event_detector
+    from app.analysis.media_context import analyze_sources
+    from app.ai.prompts import PLAN_SYSTEM, build_plan_context, select_prompt_frames
+    from app.audio.sfx_library import SfxLibrary
+    from app.editing.style_learner import EditingStyleLearner
+    from app.research.metadata_priors import youtube_duration_priors
+
+    cfg = load_config()
+    settings = (cfg or {}).get("creative_editing", {})
+    clip_dir = pathlib.Path(input_path)
+    exts = {".mp4", ".mov", ".mkv"}
+    files = sorted(p for p in clip_dir.iterdir() if p.suffix.lower() in exts)
+    if not files:
+        raise click.ClickException(f"No video clips found in {clip_dir}")
+    max_sources = max(1, int(settings.get("max_source_videos", 12)))
+    click.echo(f"Analyzing {min(len(files), max_sources)} clip(s)...")
+    media_context, frames = analyze_sources(files, max_sources=max_sources)
+
+    detector = get_event_detector(game)
+    if detector is not None:
+        click.echo(f"Scanning for {game} gameplay events...")
+        for index, source in enumerate(media_context.get("sources") or []):
+            if index >= len(files):
+                break
+            try:
+                events = detector.detect(files[index])
+            except Exception:
+                events = []
+            source["gameplay_events"] = [
+                {"kind": e.get("kind"), "start": e.get("start"),
+                 "end": e.get("end", e.get("start")), "confidence": e.get("confidence")}
+                for e in events
+            ]
+
+    platform_norm = platform.strip().lower()
+    style_profile = EditingStyleLearner(promoted_only=True).learn(platform_norm)
+    sfx_assets = SfxLibrary().list_assets()
+    try:
+        priors = youtube_duration_priors()
+    except Exception:
+        priors = {}
+    preferences = {
+        "game": game,
+        "requested_style": request,
+        "music_preference": None,
+        "sfx_preference": None,
+        "user_selected_aspect_ratio": "9:16" if platform_norm in VERTICAL_PLATFORMS else "16:9",
+        "chronological_assembly": bool(settings.get("chronological_shot_order", True)),
+        "full_session_coverage": bool(settings.get("full_session_coverage", True)),
+    }
+    context = build_plan_context(
+        media_context=media_context,
+        style_profile=style_profile,
+        platform=platform_norm,
+        target_duration=target_duration,
+        user_request=request,
+        user_preferences=preferences,
+        available_sfx=[
+            {key: item[key] for key in ("filename", "format", "duration", "description",
+                                        "type", "mood", "intensity", "tags") if item.get(key) is not None}
+            for item in sfx_assets
+        ],
+        metadata_priors=priors,
+    )
+
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ai_dir = pathlib.Path("temp") / "ai"
+    ai_dir.mkdir(parents=True, exist_ok=True)
+    frames_dir = ai_dir / f"frames_{stamp}"
+    saved_frames: list[str] = []
+    for i, frame in enumerate(select_prompt_frames(frames, limit=max_frames)):
+        data_url = str(frame.get("data_url") or "")
+        if data_url.startswith("data:") and "," in data_url:
+            frames_dir.mkdir(parents=True, exist_ok=True)
+            target = frames_dir / f"frame_{i:02d}_src{frame.get('source_index')}.jpg"
+            try:
+                target.write_bytes(base64.b64decode(data_url.split(",", 1)[1]))
+                saved_frames.append(str(target))
+            except (ValueError, OSError):
+                continue
+
+    request_path = ai_dir / f"request_{stamp}.txt"
+    response_path = ai_dir / f"response_{stamp}.txt"
+    parts = [
+        "You are acting as the creative planner for a gaming short-form editing agent.",
+        "Follow the SYSTEM instructions below and produce the edit plan from the CONTEXT JSON.",
+        "Return JSON only (code fences are tolerated).",
+        "",
+        "=== SYSTEM ===",
+        PLAN_SYSTEM,
+        "",
+        "=== CONTEXT ===",
+        json.dumps(context, ensure_ascii=True, separators=(",", ":")),
+    ]
+    if saved_frames:
+        parts += ["", "=== FRAME IMAGES (attach these to your chat message) ==="]
+        parts += [f"- {p}" for p in saved_frames]
+    parts += [
+        "",
+        "=== AFTER YOU GET THE REPLY ===",
+        f"1. Save the AI's FULL reply text to: {response_path}",
+        f"2. Run: python main.py edit \"{input_path}\" --plan-file \"{response_path}\" "
+        f"--platform {platform} --duration {target_duration} --game {game}",
+    ]
+    request_path.write_text("\n".join(parts), encoding="utf-8")
+    click.echo(json.dumps({
+        "status": "request_written",
+        "request_file": str(request_path),
+        "response_file_to_create": str(response_path),
+        "frame_images": saved_frames,
+        "sources_analyzed": len(media_context.get("sources") or []),
+        "kill_events_detected": sum(
+            len(s.get("gameplay_events") or []) for s in (media_context.get("sources") or [])
+        ),
+        "style_profile_status": style_profile.get("training_status"),
+        "instructions": [
+            f"1. Copy the whole contents of {request_path}",
+            "2. Paste into ChatGPT web (attach the frame images too, if you can)",
+            f"3. Save the AI's full reply as {response_path}",
+            f"4. python main.py edit \"{input_path}\" --plan-file \"{response_path}\" "
+            f"--platform {platform} --duration {target_duration}",
+        ],
+    }, indent=2))
+
+
 @cli.command()
 def initdb() -> None:
     """Create / reset the SQLite database schema."""
@@ -206,13 +352,16 @@ def research(topic: str | None, limit: int, inspect_only: bool) -> None:
               type=click.Choice(['auto', 'all', 'selected']),
               help='all = every indexed clip in the folder appears in the video '
                    '(config default); selected = planner picks a subset.')
+@click.option('--plan-file', default=None, type=click.Path(exists=True, dir_okay=False),
+              help='Use a plan produced by a web chat AI (see plan-request) instead of '
+                   'the local planner. The file may contain the raw chat reply (fences/prose ok).')
 def edit(input_path: str, platform: str, game: str, request: str, target_duration: int, bgm: str | None,
-         shot_order: str, source_clips: str) -> None:
+         shot_order: str, source_clips: str, plan_file: str | None) -> None:
     """Run the full CREATIVE pipeline: AI plan → render → review → revise.
 
-    The CLI has no browser, so it uses the measured local feature planner.
-    For free keyless AI planning (Puter.js/Qwen), run creative edits from the
-    dashboard chat instead: python dashboard/app.py Produces output/job_N_final.mp4 plus an .edit-plan.json
+    Planning brains, in order of preference: --plan-file (any web chat AI,
+    e.g. ChatGPT — see the plan-request command), the dashboard's Puter.js
+    browser model, or the measured local feature planner (CLI default). Produces output/job_N_final.mp4 plus an .edit-plan.json
     artifact with full decision provenance.
     """
     from app.storage.db import SessionLocal
@@ -236,6 +385,7 @@ def edit(input_path: str, platform: str, game: str, request: str, target_duratio
         "bgm_track": bgm,
         "shot_order": shot_order,
         "source_clips": source_clips,
+        "plan_file": plan_file,
     }
     db = SessionLocal()
     try:
@@ -264,8 +414,21 @@ def edit(input_path: str, platform: str, game: str, request: str, target_duratio
     def _progress(icon: str, msg: str) -> None:
         click.echo(f"{icon}  {msg}")
 
+    creative_model = None
+    if plan_file:
+        from app.ai.manual_plan_model import ManualPlanModel
+
+        plan_text = pathlib.Path(plan_file).read_text(encoding="utf-8", errors="replace")
+        exts = {".mp4", ".mov", ".mkv"}
+        source_files = sorted(
+            p for p in pathlib.Path(input_path).iterdir() if p.suffix.lower() in exts
+        )
+        creative_model = ManualPlanModel(plan_text, source_files)
+        click.echo(f"Using web-chat AI plan from {plan_file}")
+
     try:
-        output_path = orchestrate_job(job_id, options=options, progress_callback=_progress)
+        output_path = orchestrate_job(job_id, options=options, progress_callback=_progress,
+                                      model=creative_model)
     except Exception as exc:
         log.exception("Creative job failed", extra={"job_id": job_id})
         click.echo(f"Job {job_id} FAILED: {exc}", err=True)
