@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import pathlib
+import random
 import struct
 import subprocess
 from typing import Any
@@ -15,6 +16,7 @@ from app.utilities.ffmpeg_utils import get_ffmpeg_path
 class LocalShortFormEditingModel:
     def __init__(self) -> None:
         self.features: list[dict[str, Any]] = []
+        self._rng: random.Random | None = None
 
     def create_plan(
         self,
@@ -22,7 +24,12 @@ class LocalShortFormEditingModel:
         media_context: dict[str, Any],
         platform: str,
         target_duration: int,
+        seed: int | None = None,
     ) -> dict[str, Any]:
+        # Seeded jitter (±4%) breaks exact ties between near-equal windows so
+        # repeated fallback runs on the same folder are not byte-identical,
+        # while remaining fully reproducible for a given seed (job id).
+        self._rng = random.Random(seed) if seed is not None else None
         self.features = [self._analyze_source(path) for path in source_paths]
         all_activity = [score for item in self.features for score in item["activity"]]
         all_motion = [score for item in self.features for score in item["motion"]]
@@ -266,6 +273,11 @@ class LocalShortFormEditingModel:
         activity = [0.7 * visual + 0.3 * sound for visual, sound in zip(motion, audio)]
         return {"path": path, "motion": motion, "audio": audio, "activity": activity}
 
+    def _jitter(self, score: float) -> float:
+        if self._rng is None or score == 0:
+            return score
+        return score * (1.0 + (self._rng.random() - 0.5) * 0.04)
+
     def _rank_windows(self, shot_duration: float) -> list[dict[str, Any]]:
         windows = []
         window_samples = max(1, round(shot_duration * 2))
@@ -282,7 +294,7 @@ class LocalShortFormEditingModel:
                     "source_index": source_index,
                     "start": offset / 2,
                     "end": (offset + len(values)) / 2,
-                    "score": 0.6 * average + 0.25 * peak + 0.15 * active_fraction,
+                    "score": self._jitter(0.6 * average + 0.25 * peak + 0.15 * active_fraction),
                 })
         return sorted(windows, key=lambda item: item["score"], reverse=True)
 
@@ -299,7 +311,7 @@ class LocalShortFormEditingModel:
                 average = _mean(values)
                 active_fraction = sum(value >= 0.25 for value in values) / len(values)
                 peak = max(values)
-                score = 0.65 * average + 0.20 * peak + 0.15 * active_fraction
+                score = self._jitter(0.65 * average + 0.20 * peak + 0.15 * active_fraction)
                 candidate = {
                     "source_index": source_index,
                     "start": offset / 2,

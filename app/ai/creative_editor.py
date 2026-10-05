@@ -4,7 +4,61 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 from typing import Any, Optional
+
+
+def _parse_json_object(text: Any) -> Optional[dict[str, Any]]:
+    """Parse a JSON object from an LLM response.
+
+    Tolerates the shapes hosted models actually emit: bare JSON, markdown
+    code fences, leading/trailing prose, and objects embedded in text.
+    Returns None only when no JSON object can be recovered.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+        return value if isinstance(value, dict) else None
+    except json.JSONDecodeError:
+        pass
+    candidates: list[str] = []
+    fence = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL)
+    if fence:
+        candidates.append(fence.group(1).strip())
+    start = raw.find("{")
+    if start != -1:
+        depth = 0
+        in_string = False
+        escape = False
+        for index in range(start, len(raw)):
+            char = raw[index]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    candidates.append(raw[start:index + 1])
+                    break
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 def _select_prompt_frames(frames: list[dict[str, Any]], limit: int = 16) -> list[dict[str, Any]]:
@@ -218,12 +272,10 @@ class ShortFormEditingModel:
         message = response.choices[0].message.content
         if not message:
             raise RuntimeError("Creative AI returned an empty response.")
-        try:
-            value = json.loads(message)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("Creative AI returned invalid JSON.") from exc
-        if not isinstance(value, dict):
-            raise RuntimeError("Creative AI response must be a JSON object.")
+        value = _parse_json_object(message)
+        if value is None:
+            snippet = " ".join(str(message).split())[:160]
+            raise RuntimeError(f"Creative AI returned unparseable JSON; response started: {snippet!r}")
         return value
 
 

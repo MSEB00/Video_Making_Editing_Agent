@@ -111,11 +111,16 @@ class ShortFormCreativeEditor:
         except Exception as exc:
             from app.ai.local_editing import LocalShortFormEditingModel
 
-            hosted_error = type(exc).__name__
+            # Keep the (truncated) message, not just the type — remote diagnosis
+            # of hosted-provider failures is otherwise impossible.
+            hosted_error = f"{type(exc).__name__}: {str(exc)[:180]}"
             log.warning("Hosted creative model unavailable (%s); using measured local editing fallback.", hosted_error)
             local_model = LocalShortFormEditingModel()
             self._active_local_model = local_model
-            raw_plan = local_model.create_plan(input_files, media_context, platform, target_duration)
+            raw_plan = local_model.create_plan(
+                input_files, media_context, platform, target_duration,
+                seed=options.variation_seed,
+            )
         max_shots = max(1, int(self.settings.get("max_planned_shots", 24)))
         plan = EditPlan.from_dict(raw_plan, len(media_context["sources"]), max_shots)
         self._validate_source_ranges(plan, media_context["sources"], target_duration)
@@ -126,7 +131,12 @@ class ShortFormCreativeEditor:
                 f"Hosted creative model unavailable ({hosted_error}); selected strategy uses measured local features."
             )
 
-        if options.bgm_track is None or str(options.bgm_track).lower() in {"none", "off", "false"}:
+        # Only an EXPLICIT "none/off/false" disables music. bgm_track=None is
+        # the default meaning "no user preference" — the planner's own music
+        # requirements (hosted or measured) must survive. (Previously None was
+        # treated as a disable, so every default run silently dropped BGM.)
+        bgm_pref = str(options.bgm_track or "").strip().lower()
+        if bgm_pref in {"none", "off", "false", "no"}:
             plan.music_requirements = {}
         candidate_tracks = self._search_music(plan, warnings)
         if options.sfx_preference is True and not sfx_assets:
