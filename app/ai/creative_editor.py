@@ -168,6 +168,10 @@ class ShortFormEditingModel:
             "recording order (source capture order, then position within each source): select and "
             "caption moments for a chronological match narrative instead of cold-open reordering, "
             "and make the FIRST chronologically-selected moment strong enough to serve as the hook. "
+            "When user_preferences.full_session_coverage is true, EVERY analyzed source will appear "
+            "in the final cut (sources you omit get automatic event-anchored shots): spend your "
+            "creativity on per-source moment selection, captions, music and pacing rather than on "
+            "excluding sources. "
             "The context may include youtube_metadata_priors: metadata-only duration distributions "
             "from public short-form research (no media was accessed); use them as sanity checks for "
             "platform-typical pacing and length. "
@@ -296,6 +300,3 @@ class ShortFormEditingModel:
                 continue
             break
         raise RuntimeError(f"Creative AI returned {last_error}")
-
-
-OpenAICreativeEditor = ShortFormEditingModel

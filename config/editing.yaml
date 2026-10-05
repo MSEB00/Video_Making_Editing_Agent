@@ -17,6 +17,10 @@ creative_editing:
   # SELECTS moments freely; only the ordering is normalized. Set false (or use
   # `edit --order impact`) to keep planner-chosen cold-open ordering.
   chronological_shot_order: true
+  # Every indexed source clip contributes at least one shot (session recap).
+  # The planner still selects moments; missing sources get event-anchored
+  # shots constructed automatically. 'edit --source-clips selected' opts out.
+  full_session_coverage: true
   align_to_gameplay_events: true
   event_hold_seconds: 1.0
   event_max_snap_shift_seconds: 6.0

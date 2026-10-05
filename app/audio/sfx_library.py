@@ -115,12 +115,6 @@ class SfxLibrary:
         scored.sort(key=lambda item: (-item["match_score"], item["filename"]))
         return scored[: max(1, int(limit))]
 
-    def find(self, filename: str) -> pathlib.Path | None:
-        for asset in self.list_assets():
-            if asset["filename"] == pathlib.Path(filename).name:
-                return pathlib.Path(asset["path"])
-        return None
-
     def _ensure_original_assets(self) -> None:
         self.directory.mkdir(parents=True, exist_ok=True)
         generators = {

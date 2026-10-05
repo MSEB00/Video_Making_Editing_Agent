@@ -129,8 +129,9 @@ def _run_create_edit(tmp_path, monkeypatch, bgm_track, music):
         return pathlib.Path(destination)
 
     monkeypatch.setattr(editor_module, "analyze_sources", analyze)
+    model = Model()
     editor = ShortFormCreativeEditor(
-        model=Model(), music_provider=music,
+        model=model, music_provider=music,
         style_learner=type("Style", (), {"learn": lambda self, platform: {}})(),
         sfx_library=type("Sfx", (), {"list_assets": lambda self: []})(),
         renderer=render,
@@ -416,3 +417,163 @@ def test_cli_edit_order_flag_maps_to_options(tmp_path, monkeypatch, fresh_db):
     r3 = runner.invoke(main_module.cli, ["edit", str(clip_dir)])
     assert r3.exit_code == 0, r3.output
     assert captured["options"].chronological_order is None  # auto → config decides
+
+
+# ── Full-session coverage (every indexed clip appears) ───────────────────────
+
+def _coverage_editor():
+    return ShortFormCreativeEditor(
+        model=object(),
+        music_provider=type("Music", (), {"client_id": ""})(),
+        style_learner=type("Style", (), {"learn": lambda self, platform: {}})(),
+        sfx_library=type("Sfx", (), {"list_assets": lambda self: []})(),
+        renderer=lambda *a, **k: None,
+    )
+
+
+def _coverage_plan():
+    from app.editing.edit_plan import EditPlan
+    return EditPlan.from_dict({
+        "platform": "youtube_shorts", "strategy": "s", "target_duration": 12,
+        "shots": [{"source_index": 0, "start": 0, "end": 4, "role": "hook", "transition": "cut"}],
+    }, source_count=3)
+
+
+def test_coverage_constructs_event_anchored_shots_for_missing_sources():
+    editor = _coverage_editor()
+    plan = _coverage_plan()
+    sources = [{"source_index": i, "duration": 10.0} for i in range(3)]
+    events = {2: [{"kind": "kill", "start": 6.0, "end": 6.5, "confidence": 0.9}]}
+    warnings = []
+    report = editor._enforce_source_coverage(plan, sources, events, 12.0, warnings)
+    assert report["mode"] == "all" and report["constructed_shots"] == 2
+    assert report["sources_used"] == 3
+    by_source = {shot.source_index: shot for shot in plan.shots}
+    # src2 constructed shot anchors to the kill: end = 6.5 + 1.0 hold
+    assert by_source[2].end == pytest.approx(7.5, abs=0.01)
+    assert by_source[2].start <= 6.0  # event fully inside
+    # src1 has no events → centered window
+    assert by_source[1].start == pytest.approx(3.0, abs=0.01)
+    total = sum(shot.end - shot.start for shot in plan.shots)
+    assert total <= 12.01 and warnings == []
+
+
+def test_coverage_extends_duration_honestly_when_minimum_forced():
+    editor = _coverage_editor()
+    plan = _coverage_plan()
+    sources = [{"source_index": i, "duration": 10.0} for i in range(3)]
+    warnings = []
+    report = editor._enforce_source_coverage(plan, sources, {}, 2.0, warnings)
+    # 3 shots x 1.0s minimum = 3s > requested 2s → honest extension + warning
+    assert plan.target_duration == pytest.approx(report["final_duration"], abs=0.01)
+    assert plan.target_duration >= 3.0
+    assert any("Full-session coverage" in w for w in warnings)
+
+
+def test_coverage_trims_buildup_not_payoff_when_rescaling():
+    editor = _coverage_editor()
+    from app.editing.edit_plan import EditPlan
+    plan = EditPlan.from_dict({
+        "platform": "youtube_shorts", "strategy": "s", "target_duration": 6,
+        "shots": [{"source_index": 0, "start": 0, "end": 8, "role": "hook", "transition": "cut"}],
+    }, source_count=1)
+    sources = [{"source_index": 0, "duration": 10.0}]
+    events = {0: [{"kind": "kill", "start": 7.0, "end": 7.4, "confidence": 0.9}]}
+    editor._enforce_source_coverage(plan, sources, events, 6.0, [])
+    shot = plan.shots[0]
+    assert shot.end == pytest.approx(8.0, abs=0.01)   # payoff end untouched
+    assert shot.start == pytest.approx(2.0, abs=0.01)  # buildup trimmed instead
+    assert shot.end - shot.start == pytest.approx(6.0, abs=0.01)
+
+
+def test_create_edit_coverage_reaches_every_source(tmp_path, monkeypatch):
+    monkeypatch.setenv("CREATIVE_REVIEW_RENDER", "false")
+    src = tmp_path / "clips"
+    src.mkdir()
+    files = []
+    for i in range(3):
+        f = src / f"c{i}.mp4"
+        f.write_bytes(b"x")
+        files.append(f)
+
+    class Model:
+        def __init__(self):
+            self.coverage_prefs = []
+
+        def create_plan(self, **kwargs):
+            self.coverage_prefs.append(kwargs["user_preferences"]["full_session_coverage"])
+            return {  # planner only uses source 0 (the old failure mode)
+                "platform": "youtube_shorts", "strategy": "s", "target_duration": 12,
+                "shots": [{"source_index": 0, "start": 1, "end": 5, "role": "hook", "transition": "cut"}],
+                "music_requirements": {}, "sound_design": [],
+            }
+
+    def analyze(paths, max_sources=12):
+        return {"sources": [
+            {"source_index": i, "filename": f"c{i}.mp4", "duration": 10,
+             "width": 1920, "height": 1080, "has_audio": True, "audio_mean_db": -25}
+            for i in range(len(paths))
+        ]}, []
+
+    def render(inputs, destination, options, callback):
+        pathlib.Path(destination).write_bytes(b"rendered")
+        return pathlib.Path(destination)
+
+    monkeypatch.setattr(editor_module, "analyze_sources", analyze)
+    model = Model()
+    editor = ShortFormCreativeEditor(
+        model=model,
+        music_provider=type("Music", (), {"client_id": ""})(),
+        style_learner=type("Style", (), {"learn": lambda self, platform: {}})(),
+        sfx_library=type("Sfx", (), {"list_assets": lambda self: []})(),
+        renderer=render,
+    )
+    artifact = editor.create_edit(
+        files, tmp_path / "out.mp4",
+        EditOptions(creative_mode=True, platform="youtube_shorts", aspect_ratio="9:16",
+                    target_duration=12, bgm_track=None, game="none"),
+    )
+    assert artifact["source_coverage"]["mode"] == "all"
+    assert artifact["source_coverage"]["sources_used"] == 3
+    assert artifact["source_coverage"]["constructed_shots"] == 2
+    assert artifact["clip_order"] == [0, 1, 2]  # chronological + complete
+    total = sum(shot["duration"] for shot in artifact["timeline"])
+    assert total <= 12.01
+
+    # opt-out: planner subset preserved
+    artifact2 = editor.create_edit(
+        files, tmp_path / "out2.mp4",
+        EditOptions(creative_mode=True, platform="youtube_shorts", aspect_ratio="9:16",
+                    target_duration=12, bgm_track=None, game="none", full_session_coverage=False),
+    )
+    assert artifact2["source_coverage"]["mode"] == "selected"
+    assert artifact2["clip_order"] == [0]
+    assert model.coverage_prefs == [True, False]  # config default ON, explicit opt-out OFF
+
+
+def test_cli_source_clips_flag_maps_to_options(tmp_path, monkeypatch, fresh_db):
+    import main as main_module
+    from app.orchestrator import orchestrator as orchestrator_module
+
+    clip_dir = tmp_path / "clips"
+    clip_dir.mkdir(exist_ok=True)
+    (clip_dir / "a.mp4").write_bytes(b"clip")
+    captured = {}
+
+    def fake_orchestrate(job_id, options=None, progress_callback=None):
+        captured["options"] = options
+        out = tmp_path / f"job_{job_id}_final.mp4"
+        out.write_bytes(b"r")
+        return out
+
+    monkeypatch.setattr(orchestrator_module, "orchestrate_job", fake_orchestrate)
+    runner = CliRunner()
+    r1 = runner.invoke(main_module.cli, ["edit", str(clip_dir), "--source-clips", "all"])
+    assert r1.exit_code == 0, r1.output
+    assert captured["options"].full_session_coverage is True
+    r2 = runner.invoke(main_module.cli, ["edit", str(clip_dir), "--source-clips", "selected"])
+    assert r2.exit_code == 0, r2.output
+    assert captured["options"].full_session_coverage is False
+    r3 = runner.invoke(main_module.cli, ["edit", str(clip_dir)])
+    assert r3.exit_code == 0, r3.output
+    assert captured["options"].full_session_coverage is None  # auto → config default

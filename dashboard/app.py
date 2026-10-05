@@ -4,7 +4,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import re
 import json
-import glob
 import threading
 import pathlib
 import ipaddress

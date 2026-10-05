@@ -19,8 +19,8 @@ import random
 import pathlib
 import re
 import subprocess
-from dataclasses import dataclass, field
-from typing import List, Optional, Callable, Dict, Any
+from dataclasses import dataclass
+from typing import List, Optional, Callable, Dict
 
 from app.audio.bgm_manager import get_track_by_name_or_genre
 from app.utilities.ffmpeg_utils import get_duration, probe, get_audio_stream, get_ffmpeg_path
@@ -63,6 +63,7 @@ class EditOptions:
     audio_normalization_target_lufs: float = -16.0
     planned_audio_gains_db: Optional[List[float]] = None
     chronological_order: Optional[bool] = None   # None = use creative_editing.chronological_shot_order
+    full_session_coverage: Optional[bool] = None  # None = use creative_editing.full_session_coverage
 
 
 def _select_source_clips(input_files: List[pathlib.Path], options: EditOptions, rng: random.Random) -> List[pathlib.Path]:

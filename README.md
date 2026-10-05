@@ -28,6 +28,13 @@ input/<session>/*.mp4  →  Orchestrator  →  Editor (FFmpeg)  →  output/job_
   bounded-memory audio crossfade mixdown, color grading, title/caption
   overlays, SFX hits, BGM mixing with ducking, loudness normalization
   (creative mode), NVENC hardware encoding with automatic CPU fallback.
+- **Full-session coverage (default)** — every indexed clip in the session
+  folder contributes at least one shot: the planner selects moments freely,
+  and any source it skipped gets an automatic shot anchored to its
+  highest-confidence kill event (or its center window). Durations rescale
+  proportionally to the target, trimming buildup before payoffs — never the
+  after-kill hold. Opt out per-run with `--source-clips selected` or via
+  `creative_editing.full_session_coverage`.
 - **Chronological assembly (default)** — shots are reassembled in recording
   order (capture filenames sort by record time), keeping the match narrative
   consistent for viewers; the planner still selects moments freely. Disable
@@ -116,6 +123,10 @@ python main.py process input\my_session --style MONTAGE --platform youtube_short
 # Creative edit with planner-chosen (impact) ordering instead of the default
 # recording-chronology assembly:
 python main.py edit input\my_session --order impact
+
+# Let the planner pick a SUBSET of clips instead of using every indexed clip
+# (default is full-session coverage):
+python main.py edit input\my_session --source-clips selected
 
 # Only create the queued job record, run later from the dashboard
 python main.py process input\my_session --queue-only

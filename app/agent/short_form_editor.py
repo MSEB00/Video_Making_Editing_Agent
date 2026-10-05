@@ -11,7 +11,7 @@ from app.analysis.media_context import analyze_sources
 from app.audio.jamendo_provider import JamendoMusicProvider, MusicRequirements
 from app.audio.sfx_library import SfxLibrary
 from app.config.config_loader import load_config
-from app.editing.edit_plan import EditPlan
+from app.editing.edit_plan import EditPlan, PlannedShot
 from app.editing.editor import EditOptions, render_edited_video
 from app.editing.style_learner import EditingStyleLearner
 from app.utilities.logger import get_logger
@@ -73,6 +73,11 @@ class ShortFormCreativeEditor:
             if options.chronological_order is None
             else bool(options.chronological_order)
         )
+        coverage = (
+            bool(self.settings.get("full_session_coverage", False))
+            if options.full_session_coverage is None
+            else bool(options.full_session_coverage)
+        )
         preferences = {
             "game": options.game or self.settings.get("default_game", "valorant"),
             "requested_style": options.creative_request,
@@ -80,6 +85,7 @@ class ShortFormCreativeEditor:
             "sfx_preference": options.sfx_preference,
             "user_selected_aspect_ratio": options.aspect_ratio,
             "chronological_assembly": chronological,
+            "full_session_coverage": coverage,
         }
 
         local_model = None
@@ -131,9 +137,14 @@ class ShortFormCreativeEditor:
         plan = EditPlan.from_dict(raw_plan, len(media_context["sources"]), max_shots)
         self._validate_source_ranges(plan, media_context["sources"], target_duration)
         alignment = self._align_plan_to_events(plan, events_by_source, media_context["sources"])
+        warnings: list[str] = []
+        coverage_report = None
+        if coverage:
+            coverage_report = self._enforce_source_coverage(
+                plan, media_context["sources"], events_by_source, target_duration, warnings
+            )
         if chronological:
             self._apply_chronological_order(plan)
-        warnings: list[str] = []
         if hosted_error:
             warnings.append(
                 f"Hosted creative model unavailable ({hosted_error}); selected strategy uses measured local features."
@@ -210,6 +221,10 @@ class ShortFormCreativeEditor:
                     )
                     break
                 alignment = self._align_plan_to_events(revised, events_by_source, media_context["sources"]) or alignment
+                if coverage:
+                    coverage_report = self._enforce_source_coverage(
+                        revised, media_context["sources"], events_by_source, target_duration, warnings
+                    ) or coverage_report
                 if chronological:
                     self._apply_chronological_order(revised)
                 if revised.music_requirements != plan.music_requirements:
@@ -269,6 +284,11 @@ class ShortFormCreativeEditor:
         artifact["music_license"] = license_record
         artifact["warnings"] = warnings
         artifact["shot_order"] = "chronological" if chronological else "planner"
+        artifact["source_coverage"] = coverage_report or {
+            "mode": "selected",
+            "sources_total": len(media_context.get("sources") or []),
+            "sources_used": len({shot.source_index for shot in plan.shots}),
+        }
         if metadata_priors:
             artifact["youtube_metadata_priors"] = metadata_priors
         artifact["gameplay_events"] = {
@@ -717,6 +737,93 @@ class ShortFormCreativeEditor:
         if changed:
             log.info("Reassembled %d shot(s) into recording chronology", len(ordered))
         return changed
+
+    def _enforce_source_coverage(
+        self,
+        plan: EditPlan,
+        sources: list[dict[str, Any]],
+        events_by_source: dict[int, list[dict[str, Any]]],
+        target_duration: float,
+        warnings: list[str],
+    ) -> dict[str, Any]:
+        """Guarantee every analyzed source contributes at least one shot.
+
+        Planners gravitate to the single most intense source (multi-kills) and
+        silently drop the rest of the session; a session recap should
+        represent EVERY indexed clip. Missing sources get a constructed shot
+        anchored to their most confident detected event (center window when no
+        events), then all durations rescale proportionally to fit the target
+        — trimming buildup BEFORE payoffs, never the after-kill hold. Minimum
+        1.0 s per shot; when that forces a longer runtime the plan duration is
+        extended honestly and a warning is recorded.
+        """
+        source_count = len(sources)
+        covered = {shot.source_index for shot in plan.shots}
+        missing = [index for index in range(source_count) if index not in covered]
+        hold = max(0.2, float(self.settings.get("event_hold_seconds", 1.0)))
+        per_shot = max(1.0, float(target_duration) / max(1, source_count))
+        constructed = 0
+        for index in missing:
+            try:
+                duration = float(sources[index].get("duration") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if duration < 1.0:
+                continue
+            length = min(per_shot, max(0.5, duration - 0.05))
+            events = sorted(
+                events_by_source.get(index, []),
+                key=lambda event: -float(event.get("confidence") or 0.0),
+            )
+            if events:
+                event = events[0]
+                event_start = float(event.get("start", 0.0))
+                event_end = float(event.get("end") or event_start)
+                end = min(duration - 0.05, event_end + hold)
+                start = max(0.0, end - length)
+                if event_start < start:
+                    start = max(0.0, event_start - 0.3)
+                    end = min(duration - 0.05, max(end, start + min(length, 1.5)))
+            else:
+                start = max(0.0, (duration - length) / 2.0)
+                end = min(duration - 0.05, start + length)
+            if end - start < 0.5:
+                start, end = 0.0, min(max(0.5, duration - 0.05), max(1.0, length))
+            plan.shots.append(PlannedShot(
+                source_index=index,
+                start=round(start, 3),
+                end=round(end, 3),
+                role="action",
+                transition="cut",
+            ))
+            constructed += 1
+
+        total = sum(shot.end - shot.start for shot in plan.shots)
+        if total > target_duration > 0:
+            factor = target_duration / total
+            for shot in plan.shots:
+                new_length = max(1.0, (shot.end - shot.start) * factor)
+                # Trim from the START (buildup) so kill payoffs + holds survive.
+                shot.start = round(max(0.0, shot.end - new_length), 3)
+            total = sum(shot.end - shot.start for shot in plan.shots)
+        if total > target_duration + 0.01:
+            warnings.append(
+                f"Full-session coverage of {source_count} clips needs {round(total, 1)}s "
+                f"(requested {target_duration}s); duration extended so every clip appears."
+            )
+            plan.target_duration = round(total, 3)
+        if constructed:
+            log.info(
+                "Session coverage: constructed %d shot(s); all %d source(s) now appear",
+                constructed, source_count,
+            )
+        return {
+            "mode": "all",
+            "sources_total": source_count,
+            "sources_used": len({shot.source_index for shot in plan.shots}),
+            "constructed_shots": constructed,
+            "final_duration": round(sum(shot.end - shot.start for shot in plan.shots), 3),
+        }
 
     @staticmethod
     def _public_track(track: dict[str, Any]) -> dict[str, Any]:

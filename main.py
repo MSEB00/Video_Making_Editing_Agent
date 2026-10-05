@@ -202,8 +202,12 @@ def research(topic: str | None, limit: int, inspect_only: bool) -> None:
               type=click.Choice(['auto', 'chronological', 'impact']),
               help='Shot assembly: chronological = recording timeline (config default), '
                    'impact = planner-chosen ordering.')
+@click.option('--source-clips', 'source_clips', default='auto', show_default=True,
+              type=click.Choice(['auto', 'all', 'selected']),
+              help='all = every indexed clip in the folder appears in the video '
+                   '(config default); selected = planner picks a subset.')
 def edit(input_path: str, platform: str, game: str, request: str, target_duration: int, bgm: str | None,
-         shot_order: str) -> None:
+         shot_order: str, source_clips: str) -> None:
     """Run the full CREATIVE pipeline: AI plan → render → review → revise.
 
     Uses the hosted creative model when configured (GEMINI_API_KEY /
@@ -220,6 +224,7 @@ def edit(input_path: str, platform: str, game: str, request: str, target_duratio
     platform_norm = platform.strip().lower()
     aspect_ratio = "9:16" if platform_norm in VERTICAL_PLATFORMS else "16:9"
     chronological = {"auto": None, "chronological": True, "impact": False}[shot_order]
+    coverage = {"auto": None, "all": True, "selected": False}[source_clips]
     metadata = {
         "style": "CREATIVE_AI",
         "creative_mode": True,
@@ -230,6 +235,7 @@ def edit(input_path: str, platform: str, game: str, request: str, target_duratio
         "aspect_ratio": aspect_ratio,
         "bgm_track": bgm,
         "shot_order": shot_order,
+        "source_clips": source_clips,
     }
     db = SessionLocal()
     try:
@@ -251,6 +257,7 @@ def edit(input_path: str, platform: str, game: str, request: str, target_duratio
         aspect_ratio=aspect_ratio,
         bgm_track=bgm,
         chronological_order=chronological,
+        full_session_coverage=coverage,
         variation_seed=job_id,
     )
 

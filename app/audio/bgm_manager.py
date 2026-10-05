@@ -1,18 +1,15 @@
-﻿"""
+"""
 app/audio/bgm_manager.py
 -------------------------
 Manages background music assets and generation for the Gaming Video Agent.
 """
 from __future__ import annotations
 
-import os
 import math
-import json
 import random
 import wave
 import struct
 import pathlib
-import requests
 from typing import List, Dict, Optional
 
 BGM_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "assets" / "bgm"
