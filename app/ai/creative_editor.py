@@ -200,7 +200,7 @@ class ShortFormEditingModel:
             "volume, duck_under_original_audio, beat_sync_strength, and warnings."
         )
         payload = {"media": media_context, "edit_plan": plan, "candidates": candidates}
-        return self._json_call(system, payload, [], max_tokens=650)
+        return self._json_call(system, payload, [], max_tokens=1400)
 
     def review_render(
         self,
@@ -214,7 +214,7 @@ class ShortFormEditingModel:
             "music fit and ending. Do not claim to hear audio from images; use audio metadata if supplied. "
             "Return JSON only with needs_revision (boolean), critique (string), and revision_request (string)."
         )
-        return self._json_call(system, {"plan": plan, "render": review_context}, frames, max_tokens=500)
+        return self._json_call(system, {"plan": plan, "render": review_context}, frames, max_tokens=1200)
 
     def revise_plan(
         self,
@@ -259,24 +259,39 @@ class ShortFormEditingModel:
                     "type": "image_url",
                     "image_url": {"url": data_url, "detail": "low"},
                 })
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.3,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": content},
-            ],
-        )
-        message = response.choices[0].message.content
-        if not message:
-            raise RuntimeError("Creative AI returned an empty response.")
-        value = _parse_json_object(message)
-        if value is None:
-            snippet = " ".join(str(message).split())[:160]
-            raise RuntimeError(f"Creative AI returned unparseable JSON; response started: {snippet!r}")
-        return value
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
+        ]
+        budget = max_tokens
+        last_error = "no response"
+        for attempt in range(2):
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=0.3,
+                max_tokens=budget,
+                response_format={"type": "json_object"},
+                messages=messages,
+            )
+            choice = response.choices[0]
+            message = choice.message.content
+            finish_reason = getattr(choice, "finish_reason", None)
+            if message:
+                value = _parse_json_object(message)
+                if value is not None:
+                    return value
+                snippet = " ".join(str(message).split())[:160]
+                last_error = f"unparseable JSON; response started: {snippet!r}"
+            else:
+                last_error = "an empty response"
+            # Truncation (finish_reason=length) usually means the model burned
+            # the budget on internal reasoning tokens (Gemini flash family):
+            # retry once with a much larger cap before giving up.
+            if finish_reason == "length" and attempt == 0:
+                budget = min(budget * 4, 12000)
+                continue
+            break
+        raise RuntimeError(f"Creative AI returned {last_error}")
 
 
 OpenAICreativeEditor = ShortFormEditingModel

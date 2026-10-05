@@ -164,10 +164,19 @@ class ShortFormCreativeEditor:
         if review_enabled:
             reviewer = local_model or self.model
             review_context, review_frames = analyze_sources([output_path], max_sources=1)
-            critique = reviewer.review_render(plan.to_dict(), review_context, review_frames)
-            plan.review = critique
+            try:
+                critique = reviewer.review_render(plan.to_dict(), review_context, review_frames)
+            except Exception as exc:
+                critique = None
+                warnings.append(
+                    f"Render review failed ({type(exc).__name__}: {str(exc)[:140]}); "
+                    "shipping the render without critique."
+                )
+            if isinstance(critique, dict):
+                plan.review = critique
             while (
-                revision_count < max_revisions
+                isinstance(critique, dict)
+                and revision_count < max_revisions
                 and critique.get("needs_revision")
                 and critique.get("revision_request")
             ):
@@ -176,15 +185,22 @@ class ShortFormCreativeEditor:
                     f"{revision_count + 1} of up to {max_revisions}..."
                 )
                 previous_critique = str(critique.get("critique", ""))[:500]
-                revised_raw = reviewer.revise_plan(
-                    plan=plan.to_dict(),
-                    critique=critique,
-                    media_context=media_context,
-                    platform=platform,
-                    target_duration=target_duration,
-                )
-                revised = EditPlan.from_dict(revised_raw, len(media_context["sources"]), max_shots)
-                self._validate_source_ranges(revised, media_context["sources"], target_duration)
+                try:
+                    revised_raw = reviewer.revise_plan(
+                        plan=plan.to_dict(),
+                        critique=critique,
+                        media_context=media_context,
+                        platform=platform,
+                        target_duration=target_duration,
+                    )
+                    revised = EditPlan.from_dict(revised_raw, len(media_context["sources"]), max_shots)
+                    self._validate_source_ranges(revised, media_context["sources"], target_duration)
+                except Exception as exc:
+                    warnings.append(
+                        f"Revision failed ({type(exc).__name__}: {str(exc)[:140]}); "
+                        "keeping the current render."
+                    )
+                    break
                 alignment = self._align_plan_to_events(revised, events_by_source, media_context["sources"]) or alignment
                 if revised.music_requirements != plan.music_requirements:
                     candidate_tracks = self._search_music(revised, warnings)
@@ -212,7 +228,19 @@ class ShortFormCreativeEditor:
                 )
                 revision_count += 1
                 review_context, review_frames = analyze_sources([output_path], max_sources=1)
-                critique = reviewer.review_render(plan.to_dict(), review_context, review_frames)
+                try:
+                    critique = reviewer.review_render(plan.to_dict(), review_context, review_frames)
+                except Exception as exc:
+                    plan.review = {
+                        "needs_revision": False,
+                        "critique": f"Re-review unavailable ({type(exc).__name__}).",
+                        "revision_request": "",
+                        "revision_applied": True,
+                        "revision_pass": revision_count,
+                        "previous_critique": previous_critique,
+                    }
+                    warnings.append("Re-review after revision failed; keeping the revised render.")
+                    break
                 plan.review = {
                     **critique,
                     "revision_applied": True,
@@ -358,7 +386,15 @@ class ShortFormCreativeEditor:
             return None, None
         public_candidates = [self._music_candidate_summary(track) for track in candidates[:12]]
         ranker = getattr(self, "_active_local_model", None) or self.model
-        selection = ranker.rank_music(media_context, plan.to_dict(), public_candidates)
+        try:
+            selection = ranker.rank_music(media_context, plan.to_dict(), public_candidates)
+        except Exception as exc:
+            # Music is an optional enhancement — a ranker failure must never
+            # kill an otherwise renderable job.
+            detail = f"{type(exc).__name__}: {str(exc)[:140]}"
+            warnings.append(f"Music ranking failed ({detail}); keeping original gameplay audio.")
+            log.warning("Music ranking failed; continuing without BGM: %s", detail)
+            return None, None
         selected_id = str(selection.get("track_id") or "")
         track = next((item for item in candidates if item["id"] == selected_id), None)
         if track is None:

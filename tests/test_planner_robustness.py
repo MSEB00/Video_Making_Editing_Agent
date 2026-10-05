@@ -142,3 +142,150 @@ def test_explicit_bgm_off_disables_music(tmp_path, monkeypatch):
     music = _RecordingMusic()
     _run_create_edit(tmp_path, monkeypatch, "none", music)
     assert music.search_calls == []
+
+
+# ── Job-86 class: truncated music ranking must not kill the job ──────────────
+
+class _SequenceClient:
+    """Stub returning a scripted sequence of (content, finish_reason)."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+        outer = self
+
+        class Completions:
+            def create(self, **kwargs):
+                outer.calls.append(kwargs)
+                content, finish = outer.responses.pop(0)
+                message = type("M", (), {"content": content})()
+                choice = type("C", (), {"message": message, "finish_reason": finish})()
+                return type("R", (), {"choices": [choice]})()
+
+        self.chat = type("Chat", (), {"completions": Completions()})()
+
+
+def test_json_call_retries_on_length_truncation(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    client = _SequenceClient([
+        ('{ "track_id": "20', "length"),                     # job-86 style truncation
+        ('{"track_id": "2060076", "rationale": "fits"}', "stop"),
+    ])
+    model = ShortFormEditingModel(client=client, model="m")
+    result = model.rank_music({}, {"music_requirements": {}}, [])
+    assert result["track_id"] == "2060076"
+    assert len(client.calls) == 2
+    assert client.calls[1]["max_tokens"] == client.calls[0]["max_tokens"] * 4  # budget raised
+
+
+def test_json_call_gives_up_after_second_truncation(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    client = _SequenceClient([
+        ('{ "track_id": "2', "length"),
+        ('{ "track_id": "20', "length"),
+    ])
+    model = ShortFormEditingModel(client=client, model="m")
+    with pytest.raises(RuntimeError, match="unparseable JSON"):
+        model.rank_music({}, {"music_requirements": {}}, [])
+
+
+def test_music_ranking_failure_degrades_to_no_bgm(tmp_path, monkeypatch):
+    class FailingRanker:
+        def create_plan(self, **kwargs):
+            return {
+                "platform": "youtube_shorts", "strategy": "s", "target_duration": 3,
+                "shots": [{"source_index": 0, "start": 0, "end": 3, "role": "action", "transition": "cut"}],
+                "music_requirements": {"search": "energetic"}, "sound_design": [],
+            }
+
+        def rank_music(self, media_context, plan, candidates):
+            raise RuntimeError("Creative AI returned unparseable JSON; response started: '{ \"track_id\": \"20'")
+
+    class OneTrackMusic(_RecordingMusic):
+        def search(self, requirements, limit=20):
+            self.search_calls.append(requirements)
+            return [{"id": "t1", "duration": 60, "title": "Track", "artist": "A",
+                     "download_allowed": True, "license_url": "https://x/y"}]
+
+        def analyze_audio(self, audio_url, sample_seconds=12):
+            return {"bpm": 140.0, "bpm_confidence": 0.7, "sections": []}
+
+    monkeypatch.setenv("CREATIVE_REVIEW_RENDER", "false")
+    source = tmp_path / "gameplay.mp4"
+    source.write_bytes(b"source")
+
+    def analyze(paths, max_sources=12):
+        return {"sources": [{
+            "source_index": 0, "filename": "gameplay.mp4", "duration": 10,
+            "width": 1920, "height": 1080, "has_audio": True, "audio_mean_db": -25,
+        }]}, []
+
+    renders = []
+
+    def render(inputs, destination, options, callback):
+        renders.append(destination)
+        pathlib.Path(destination).write_bytes(b"rendered")
+        return pathlib.Path(destination)
+
+    monkeypatch.setattr(editor_module, "analyze_sources", analyze)
+    editor = ShortFormCreativeEditor(
+        model=FailingRanker(), music_provider=OneTrackMusic(),
+        style_learner=type("Style", (), {"learn": lambda self, platform: {}})(),
+        sfx_library=type("Sfx", (), {"list_assets": lambda self: []})(),
+        renderer=render,
+    )
+    artifact = editor.create_edit(
+        [source], tmp_path / "out.mp4",
+        EditOptions(creative_mode=True, platform="youtube_shorts", aspect_ratio="9:16",
+                    target_duration=3, bgm_track=None),
+    )
+    assert len(renders) == 1                       # job completed despite ranker failure
+    assert artifact["music_mix"]["enabled"] is False
+    assert any("Music ranking failed" in w for w in artifact["warnings"])
+
+
+def test_review_failure_ships_render_with_warning(tmp_path, monkeypatch):
+    monkeypatch.setenv("CREATIVE_REVIEW_RENDER", "true")
+
+    class Model:
+        def create_plan(self, **kwargs):
+            return {
+                "platform": "youtube_shorts", "strategy": "s", "target_duration": 2,
+                "shots": [{"source_index": 0, "start": 0, "end": 2, "role": "action", "transition": "cut"}],
+                "music_requirements": {}, "sound_design": [],
+            }
+
+        def review_render(self, plan, context, frames):
+            raise RuntimeError("Creative AI returned unparseable JSON (review truncated)")
+
+    def analyze(paths, max_sources=12):
+        return {"sources": [{
+            "source_index": 0, "filename": pathlib.Path(paths[0]).name, "duration": 2,
+            "width": 1080, "height": 1920, "has_audio": True, "audio_mean_db": -30,
+        }]}, [{"time": 0.5, "data_url": "data:image/jpeg;base64,eA=="}]
+
+    renders = []
+
+    def render(inputs, destination, options, callback):
+        renders.append(destination)
+        pathlib.Path(destination).write_bytes(b"rendered")
+        return pathlib.Path(destination)
+
+    monkeypatch.setattr(editor_module, "analyze_sources", analyze)
+    editor = ShortFormCreativeEditor(
+        model=Model(),
+        music_provider=type("Music", (), {"client_id": ""})(),
+        style_learner=type("Style", (), {"learn": lambda self, platform: {}})(),
+        sfx_library=type("Sfx", (), {"list_assets": lambda self: []})(),
+        renderer=render,
+    )
+    artifact = editor.create_edit(
+        [tmp_path / "g.mp4"], tmp_path / "out.mp4",
+        EditOptions(creative_mode=True, platform="youtube_shorts", aspect_ratio="9:16",
+                    target_duration=2, bgm_track=None),
+    )
+    assert len(renders) == 1
+    assert artifact["revision_count"] == 0
+    assert any("Render review failed" in w for w in artifact["warnings"])
